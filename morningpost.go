@@ -33,10 +33,10 @@ var templates embed.FS
 const (
 	DefaultHTTPTimeout = 30 * time.Second
 	DefaultListenPort  = 33000
-	DefaultShowMaxNews = 20
-	FeedTypeRSS        = "RSS"
+	DefaultShowMaxNews = 50
 	FeedTypeAtom       = "Atom"
 	FeedTypeRDF        = "RDF"
+	FeedTypeRSS        = "RSS"
 )
 
 type News struct {
@@ -91,6 +91,7 @@ func (m *MorningPost) RandomNews() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.News) < m.ShowMaxNews {
+		m.PageNews = m.News
 		return
 	}
 	m.PageNews = make([]News, 0, m.ShowMaxNews)
