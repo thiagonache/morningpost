@@ -625,7 +625,7 @@ func TestGetNews_ErrorsIfFeedGetNewsErrors(t *testing.T) {
 	}
 }
 
-func TestRandomNews_RandomizePageNewsToSameNumberAsShowMaxNews(t *testing.T) {
+func TestRandomNews_RandomizePageNewsGivenMoreNewsThanShowMaxNews(t *testing.T) {
 	t.Parallel()
 	want := 1
 	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
@@ -638,6 +638,24 @@ func TestRandomNews_RandomizePageNewsToSameNumberAsShowMaxNews(t *testing.T) {
 	got := len(m.PageNews)
 	if want != got {
 		t.Fatalf("want PageNews %d, got %d", want, got)
+	}
+}
+
+func TestRandomNews_SetPageNewsToNewsGivenLessNewsThanShowMaxNews(t *testing.T) {
+	t.Parallel()
+	want := []morningpost.News{
+		{Title: "RSS Solutions for Restaurants", URL: "http://www.feedforall.com/restaurant.htm"},
+		{Title: "RSS Solutions for Schools and Colleges", URL: "http://www.feedforall.com/schools.htm"},
+	}
+	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m.News = []morningpost.News{
+		{Title: "RSS Solutions for Restaurants", URL: "http://www.feedforall.com/restaurant.htm"},
+		{Title: "RSS Solutions for Schools and Colleges", URL: "http://www.feedforall.com/schools.htm"},
+	}
+	m.RandomNews()
+	got := m.PageNews
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
 	}
 }
 
