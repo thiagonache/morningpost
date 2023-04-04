@@ -423,7 +423,41 @@ func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndBlankSpacesIn
 	}
 }
 
-func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
+func TestHandleFeeds_DeleteFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testing.T) {
+	t.Parallel()
+	want := map[uint64]morningpost.Feed{
+		1: {
+			Endpoint: "https://fake-https.url",
+		},
+	}
+	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m.Store.Data = map[uint64]morningpost.Feed{
+		0: {
+			Endpoint: "http://fake-http.url",
+		},
+		1: {
+			Endpoint: "https://fake-https.url",
+		},
+	}
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
+	defer ts.Close()
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected response status code %q", resp.Status)
+	}
+	got := m.Store.Data
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
+func TestHandleHome_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
 	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
