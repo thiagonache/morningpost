@@ -208,11 +208,6 @@ func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m.Store.Delete(ui64)
-		err = RenderHTMLTemplate(w, "templates/feeds.gohtml", m.Store.GetAll())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 	default:
 		fmt.Fprintln(m.Stderr, "Method not allowed")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
