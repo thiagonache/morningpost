@@ -1,5 +1,5 @@
-{{template "main" .}}
-{{define "content"}}
+{{ template "main" . }}
+{{ define "content" }}
 <div class="container">
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container-fluid">
@@ -64,17 +64,16 @@
         <th class="table-primary" scope="col">Action</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody
+      hx-confirm="Please, confirm you want to delete this feed."
+      hx-target="closest tr"
+      hx-swap="outerHTML swap:1s"
+    >
       {{- range . -}}
       <tr>
         <th scope="row">{{ .Endpoint }}</th>
         <td>
-          <button
-            class="btn btn-danger"
-            hx-delete="/feeds/{{ .ID }}"
-            hx-confirm="Are you sure you wish to delete this feed?"
-            hx-target="body"
-          >
+          <button class="btn btn-danger" hx-delete="/feeds/{{ .ID }}">
             Delete
           </button>
         </td>

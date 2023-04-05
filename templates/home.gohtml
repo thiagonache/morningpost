@@ -1,5 +1,5 @@
-{{template "main" .}}
-{{define "content"}}
+{{ template "main" . }}
+{{ define "content" }}
 <div class="container">
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container-fluid">
@@ -34,14 +34,7 @@
   {{ else }}
   <table class="table">
     <tbody>
-      {{- range . -}}
-      <tr>
-        <th class="table-light" scope="row">
-          <a href="{{ .URL }}">{{ .Title }}</a>
-          <small class="text-muted">{{ .Feed }}</small>
-        </th>
-      </tr>
-      {{- end -}}
+      <tr hx-get="/news" hx-trigger="revealed" hx-swap="afterend"></tr>
     </tbody>
   </table>
   {{ end }}

@@ -6,10 +6,19 @@ It's a full stack program including GUI.
 
 ## Getting started
 
-Run program and open your browser at http://localhost:33000
+### Installing
 
 ```bash
-$ run cmd/morningpost/main.go
+$ go install github.com/thiagonache/morningpost/cmd/morningpost@latest
+$
+```
+
+### Running
+
+Run program and open your browser at <http://localhost:33000/>
+
+```bash
+$ morningpost
 2023/04/03 10:22:11 Listening at http://0.0.0.0:33000
 ```
 
