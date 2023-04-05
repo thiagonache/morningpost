@@ -239,6 +239,32 @@ func (m *MorningPost) HandleHome(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
+	page := 1
+	params := r.URL.Query()
+	if params.Get("page") != "" {
+		var err error
+		page, err = strconv.Atoi(params.Get("page"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	data := struct {
+		NextPage int
+		PageNews News
+	}{
+		page + 1,
+		m.News[page-1],
+	}
+	tpl := template.Must(template.ParseFS(templates, "templates/news.gohtml"))
+	err := tpl.Execute(w, data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func New(store *FileStore, opts ...Option) (*MorningPost, error) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	m := &MorningPost{
@@ -305,6 +331,7 @@ func Main() int {
 	}
 	http.HandleFunc("/", m.HandleHome)
 	http.HandleFunc("/feeds/", m.HandleFeeds)
+	http.HandleFunc("/news/", m.HandleNews)
 	listenAddr := fmt.Sprintf("0.0.0.0:%d", m.ListenPort)
 	httpServer := http.Server{
 		Addr: listenAddr,

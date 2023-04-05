@@ -1081,3 +1081,91 @@ func TestNewNews_ErrorsGiven(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleNews_RenderProperHTMLPageGivenGetRequest(t *testing.T) {
+	t.Parallel()
+	want := []byte(`<tr
+  hx-get="/news?page=2"
+  hx-trigger="revealed"
+  hx-swap="afterend"
+>
+  <th class="table-light" scope="row">
+    <a href="http://www.feedforall.com/restaurant.htm">RSS Solutions for Restaurants</a>
+    <small class="text-muted">FeedForAll Sample Feed</small>
+  </th>
+</tr>
+`)
+	m, err := morningpost.New(newFileStoreWithBogusPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.News = []morningpost.News{
+		{
+			Feed:  "FeedForAll Sample Feed",
+			Title: "RSS Solutions for Restaurants",
+			URL:   "http://www.feedforall.com/restaurant.htm",
+		},
+		{
+			Feed:  "FeedForAll Sample Feed",
+			Title: "RSS Solutions for Schools and Colleges",
+			URL:   "http://www.feedforall.com/schools.htm",
+		},
+	}
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
+	defer ts.Close()
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
+
+func TestHandleNews_RenderProperHTMLPageGivenPage2GetRequest(t *testing.T) {
+	t.Parallel()
+	want := []byte(`<tr
+  hx-get="/news?page=3"
+  hx-trigger="revealed"
+  hx-swap="afterend"
+>
+  <th class="table-light" scope="row">
+    <a href="http://www.feedforall.com/schools.htm">RSS Solutions for Schools and Colleges</a>
+    <small class="text-muted">FeedForAll Sample Feed</small>
+  </th>
+</tr>
+`)
+	m, err := morningpost.New(newFileStoreWithBogusPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.News = []morningpost.News{
+		{
+			Feed:  "FeedForAll Sample Feed",
+			Title: "RSS Solutions for Restaurants",
+			URL:   "http://www.feedforall.com/restaurant.htm",
+		},
+		{
+			Feed:  "FeedForAll Sample Feed",
+			Title: "RSS Solutions for Schools and Colleges",
+			URL:   "http://www.feedforall.com/schools.htm",
+		},
+	}
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "?page=2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
