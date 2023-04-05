@@ -90,12 +90,8 @@ func (m *MorningPost) GetNews() error {
 func (m *MorningPost) RandomNews() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.News) < m.ShowMaxNews {
-		m.PageNews = m.News
-		return
-	}
 	m.PageNews = make([]News, 0, m.ShowMaxNews)
-	randomIndexes := rand.Perm(len(m.News))[:m.ShowMaxNews]
+	randomIndexes := rand.Perm(len(m.News))
 	for _, idx := range randomIndexes {
 		m.PageNews = append(m.PageNews, m.News[idx])
 	}
@@ -240,27 +236,39 @@ func (m *MorningPost) HandleHome(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
-	page := 1
-	params := r.URL.Query()
-	if params.Get("page") != "" {
-		var err error
-		page, err = strconv.Atoi(params.Get("page"))
+	fmt.Fprintln(m.Stdout, r.Method, r.URL)
+	switch r.Method {
+	case http.MethodGet:
+		page := 1
+		params := r.URL.Query()
+		if params.Get("page") != "" {
+			var err error
+			page, err = strconv.Atoi(params.Get("page"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		nextPage := page + 1
+		if nextPage > len(m.PageNews) {
+			nextPage = 0
+		}
+		data := struct {
+			NextPage int
+			PageNews News
+		}{
+			nextPage,
+			m.PageNews[page-1],
+		}
+		tpl := template.Must(template.ParseFS(templates, "templates/news.gohtml"))
+		err := tpl.Execute(w, data)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	}
-	data := struct {
-		NextPage int
-		PageNews News
-	}{
-		page + 1,
-		m.News[page-1],
-	}
-	tpl := template.Must(template.ParseFS(templates, "templates/news.gohtml"))
-	err := tpl.Execute(w, data)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		fmt.Fprintln(m.Stderr, "Method not allowed")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 }
