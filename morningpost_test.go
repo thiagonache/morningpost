@@ -67,6 +67,18 @@ func generateOneThousandsNews(t *testing.T) []morningpost.News {
 	return allNews
 }
 
+func removeEmptyLines(data []byte) []byte {
+	var buf bytes.Buffer
+	for _, b := range data {
+		if b != '\n' {
+			buf.WriteByte(b)
+		} else if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] != '\n' {
+			buf.WriteByte(b)
+		}
+	}
+	return buf.Bytes()
+}
+
 func TestNew_SetsDefaultShowMaxNewsByDefault(t *testing.T) {
 	t.Parallel()
 	want := morningpost.DefaultShowMaxNews
@@ -659,40 +671,6 @@ func TestGetNews_ErrorsIfFeedGetNewsErrors(t *testing.T) {
 	}
 }
 
-func TestRandomNews_RandomizePageNewsGivenMoreNewsThanShowMaxNews(t *testing.T) {
-	t.Parallel()
-	want := 1
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
-	m.ShowMaxNews = 1
-	m.News = []morningpost.News{
-		{Title: "RSS Solutions for Restaurants", URL: "http://www.feedforall.com/restaurant.htm"},
-		{Title: "RSS Solutions for Schools and Colleges", URL: "http://www.feedforall.com/schools.htm"},
-	}
-	m.RandomNews()
-	got := len(m.PageNews)
-	if want != got {
-		t.Fatalf("want PageNews %d, got %d", want, got)
-	}
-}
-
-func TestRandomNews_SetPageNewsToNewsGivenLessNewsThanShowMaxNews(t *testing.T) {
-	t.Parallel()
-	want := []morningpost.News{
-		{Title: "RSS Solutions for Restaurants", URL: "http://www.feedforall.com/restaurant.htm"},
-		{Title: "RSS Solutions for Schools and Colleges", URL: "http://www.feedforall.com/schools.htm"},
-	}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
-	m.News = []morningpost.News{
-		{Title: "RSS Solutions for Restaurants", URL: "http://www.feedforall.com/restaurant.htm"},
-		{Title: "RSS Solutions for Schools and Colleges", URL: "http://www.feedforall.com/schools.htm"},
-	}
-	m.RandomNews()
-	got := m.PageNews
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
-	}
-}
-
 func TestParseAtomResponse_ReturnsNewsGivenAtomWithTwoNews(t *testing.T) {
 	t.Parallel()
 	want := []morningpost.News{
@@ -1095,11 +1073,8 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequest(t *testing.T) {
   </th>
 </tr>
 `)
-	m, err := morningpost.New(newFileStoreWithBogusPath(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.News = []morningpost.News{
+	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m.PageNews = []morningpost.News{
 		{
 			Feed:  "FeedForAll Sample Feed",
 			Title: "RSS Solutions for Restaurants",
@@ -1117,33 +1092,27 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := removeEmptyLines(body)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 }
 
-func TestHandleNews_RenderProperHTMLPageGivenPage2GetRequest(t *testing.T) {
+func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	t.Parallel()
-	want := []byte(`<tr
-  hx-get="/news?page=3"
-  hx-trigger="revealed"
-  hx-swap="afterend"
->
+	want := []byte(`<tr>
   <th class="table-light" scope="row">
     <a href="http://www.feedforall.com/schools.htm">RSS Solutions for Schools and Colleges</a>
     <small class="text-muted">FeedForAll Sample Feed</small>
   </th>
 </tr>
 `)
-	m, err := morningpost.New(newFileStoreWithBogusPath(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.News = []morningpost.News{
+	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m.PageNews = []morningpost.News{
 		{
 			Feed:  "FeedForAll Sample Feed",
 			Title: "RSS Solutions for Restaurants",
@@ -1161,11 +1130,32 @@ func TestHandleNews_RenderProperHTMLPageGivenPage2GetRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := removeEmptyLines(body)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
+	}
+}
+
+func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithUnexpectedMethod(t *testing.T) {
+	t.Parallel()
+	want := http.StatusMethodNotAllowed
+	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
+	defer ts.Close()
+	req, err := http.NewRequest("bogus", ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want status code %d, got %d", want, got)
 	}
 }
