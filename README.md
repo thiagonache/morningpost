@@ -2,6 +2,8 @@
 
 It's nice to have something interesting to read with your morning coffee. My task with this project is to write a Go program that will curate a little “morning newspaper” for you.
 
+![Demo Video](https://thiagocarvalho-public-assets.s3.us-west-2.amazonaws.com/morningpost-videos/demo.gif)
+
 ## Getting started
 
 ### Install binary
