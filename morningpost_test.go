@@ -79,11 +79,11 @@ func removeEmptyLines(data []byte) []byte {
 	return buf.Bytes()
 }
 
-func TestNew_SetsDefaultShowMaxNewsByDefault(t *testing.T) {
+func TestNew_SetsDefaultNewsPageSizeByDefault(t *testing.T) {
 	t.Parallel()
-	want := morningpost.DefaultShowMaxNews
+	want := morningpost.DefaultNewsPageSize
 	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
-	got := m.ShowMaxNews
+	got := m.NewsPageSize
 	if want != got {
 		t.Fatalf("want ShowMaxNews %d but got %d", want, got)
 	}
@@ -1062,28 +1062,45 @@ func TestNewNews_ErrorsGiven(t *testing.T) {
 
 func TestHandleNews_RenderProperHTMLPageGivenGetRequest(t *testing.T) {
 	t.Parallel()
-	want := []byte(`<tr
+	want := []byte(`<tr>
+  <th class="table-light" scope="row">
+    <a href="http://fake.url/title1.htm">Title 1</a>
+    <small class="text-muted">Unit Test Feed</small>
+  </th>
+</tr>
+<tr
   hx-get="/news?page=2"
   hx-trigger="revealed"
   hx-swap="afterend"
 >
   <th class="table-light" scope="row">
-    <a href="http://www.feedforall.com/restaurant.htm">RSS Solutions for Restaurants</a>
-    <small class="text-muted">FeedForAll Sample Feed</small>
+    <a href="http://fake.url/title2.htm">Title 2</a>
+    <small class="text-muted">Unit Test Feed</small>
   </th>
 </tr>
 `)
 	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m.NewsPageSize = 2
 	m.PageNews = []morningpost.News{
 		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Restaurants",
-			URL:   "http://www.feedforall.com/restaurant.htm",
+			Feed:  "Unit Test Feed",
+			Title: "Title 1",
+			URL:   "http://fake.url/title1.htm",
 		},
 		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Schools and Colleges",
-			URL:   "http://www.feedforall.com/schools.htm",
+			Feed:  "Unit Test Feed",
+			Title: "Title 2",
+			URL:   "http://fake.url/title2.htm",
+		},
+		{
+			Feed:  "Unit Test Feed",
+			Title: "Title 3",
+			URL:   "http://fake.url/title3.htm",
+		},
+		{
+			Feed:  "Unit Test Feed",
+			Title: "Title 4",
+			URL:   "http://fake.url/title4.htm",
 		},
 	}
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
@@ -1106,6 +1123,12 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
   <th class="table-light" scope="row">
+    <a href="http://www.feedforall.com/restaurant.htm">RSS Solutions for Restaurants</a>
+    <small class="text-muted">FeedForAll Sample Feed</small>
+  </th>
+</tr>
+<tr>
+  <th class="table-light" scope="row">
     <a href="http://www.feedforall.com/schools.htm">RSS Solutions for Schools and Colleges</a>
     <small class="text-muted">FeedForAll Sample Feed</small>
   </th>
@@ -1126,7 +1149,7 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	}
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
 	defer ts.Close()
-	resp, err := http.Get(ts.URL + "?page=2")
+	resp, err := http.Get(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}

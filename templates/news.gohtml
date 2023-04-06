@@ -1,14 +1,22 @@
-{{ if eq .NextPage 0 }}
+{{ $nextPage := .NextPage }}
+{{ $lastPageIdx := .LastPageIdx }}
+{{ range $i, $news := .PageNews }}
+{{ if eq $nextPage 0 }}
 <tr>
 {{ else }}
+{{ if eq $i $lastPageIdx }}
 <tr
-  hx-get="/news?page={{ .NextPage }}"
+  hx-get="/news?page={{ $nextPage }}"
   hx-trigger="revealed"
   hx-swap="afterend"
 >
+{{ else }}
+<tr>
+{{ end }}
 {{ end }}
   <th class="table-light" scope="row">
-    <a href="{{ .PageNews.URL }}">{{ .PageNews.Title }}</a>
-    <small class="text-muted">{{ .PageNews.Feed }}</small>
+    <a href="{{ $news.URL }}">{{ $news.Title }}</a>
+    <small class="text-muted">{{ $news.Feed }}</small>
   </th>
 </tr>
+{{ end }}

@@ -31,12 +31,12 @@ import (
 var templates embed.FS
 
 const (
-	DefaultHTTPTimeout = 30 * time.Second
-	DefaultListenPort  = 33000
-	DefaultShowMaxNews = 50
-	FeedTypeAtom       = "Atom"
-	FeedTypeRDF        = "RDF"
-	FeedTypeRSS        = "RSS"
+	DefaultHTTPTimeout  = 30 * time.Second
+	DefaultListenPort   = 33000
+	DefaultNewsPageSize = 10
+	FeedTypeAtom        = "Atom"
+	FeedTypeRDF         = "RDF"
+	FeedTypeRSS         = "RSS"
 )
 
 type News struct {
@@ -57,13 +57,13 @@ func NewNews(feed, title, URL string) (News, error) {
 }
 
 type MorningPost struct {
-	Client      *http.Client
-	ListenPort  int
-	PageNews    []News
-	ShowMaxNews int
-	Stderr      io.Writer
-	Stdout      io.Writer
-	Store       *FileStore
+	Client       *http.Client
+	ListenPort   int
+	PageNews     []News
+	NewsPageSize int
+	Stderr       io.Writer
+	Stdout       io.Writer
+	Store        *FileStore
 
 	mu   *sync.Mutex
 	News []News
@@ -90,7 +90,7 @@ func (m *MorningPost) GetNews() error {
 func (m *MorningPost) RandomNews() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.PageNews = make([]News, 0, m.ShowMaxNews)
+	m.PageNews = make([]News, 0, m.NewsPageSize)
 	randomIndexes := rand.Perm(len(m.News))
 	for _, idx := range randomIndexes {
 		m.PageNews = append(m.PageNews, m.News[idx])
@@ -250,15 +250,19 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		nextPage := page + 1
-		if nextPage > len(m.PageNews) {
+		lastIdx := m.NewsPageSize * page
+		if lastIdx > len(m.PageNews) {
 			nextPage = 0
+			lastIdx = len(m.PageNews)
 		}
 		data := struct {
-			NextPage int
-			PageNews News
+			LastPageIdx int
+			NextPage    int
+			PageNews    []News
 		}{
+			m.NewsPageSize - 1,
 			nextPage,
-			m.PageNews[page-1],
+			m.PageNews[m.NewsPageSize*(page-1) : lastIdx],
 		}
 		tpl := template.Must(template.ParseFS(templates, "templates/news.gohtml"))
 		err := tpl.Execute(w, data)
@@ -279,12 +283,12 @@ func New(store *FileStore, opts ...Option) (*MorningPost, error) {
 		Client: &http.Client{
 			Timeout: DefaultHTTPTimeout,
 		},
-		ListenPort:  DefaultListenPort,
-		mu:          &sync.Mutex{},
-		ShowMaxNews: DefaultShowMaxNews,
-		Stderr:      os.Stderr,
-		Stdout:      os.Stdout,
-		Store:       store,
+		ListenPort:   DefaultListenPort,
+		mu:           &sync.Mutex{},
+		NewsPageSize: DefaultNewsPageSize,
+		Stderr:       os.Stderr,
+		Stdout:       os.Stdout,
+		Store:        store,
 	}
 	for _, o := range opts {
 		err := o(m)
