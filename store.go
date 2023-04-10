@@ -43,6 +43,7 @@ func (f *FileStore) Save() error {
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 	enc := gob.NewEncoder(file)
 	return enc.Encode(f.Data)
 }
