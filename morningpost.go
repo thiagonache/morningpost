@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -58,11 +57,14 @@ func NewNews(feed, title, URL string) (News, error) {
 
 type MorningPost struct {
 	Client       *http.Client
+	ctx          context.Context
 	ListenPort   int
-	PageNews     []News
 	NewsPageSize int
+	PageNews     []News
+	Server       *http.Server
 	Stderr       io.Writer
 	Stdout       io.Writer
+	stop         context.CancelFunc
 	Store        *FileStore
 
 	mu   *sync.Mutex
@@ -71,6 +73,7 @@ type MorningPost struct {
 
 func (m *MorningPost) GetNews() error {
 	m.EmptyNews()
+	defer m.RandomNews()
 	g := new(errgroup.Group)
 	for _, feed := range m.Store.GetAll() {
 		feed := feed
@@ -223,7 +226,6 @@ func (m *MorningPost) HandleHome(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fmt.Fprintln(m.Stderr, err.Error())
 		}
-		m.RandomNews()
 		err = RenderHTMLTemplate(w, "templates/home.gohtml", m.PageNews)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -252,8 +254,10 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 		nextPage := page + 1
 		lastIdx := m.NewsPageSize * page
 		if lastIdx > len(m.PageNews) {
-			nextPage = 0
 			lastIdx = len(m.PageNews)
+		}
+		if lastIdx >= len(m.PageNews) {
+			nextPage = 0
 		}
 		data := struct {
 			LastPageIdx int
@@ -277,18 +281,48 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (m *MorningPost) Run() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", m.HandleHome)
+	mux.HandleFunc("/feeds/", m.HandleFeeds)
+	mux.HandleFunc("/news/", m.HandleNews)
+	m.Server = &http.Server{
+		Addr:    fmt.Sprintf("127.0.0.1:%d", m.ListenPort),
+		Handler: mux,
+	}
+	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", fmt.Sprintf("127.0.0.1:%d", m.ListenPort))
+	return m.Server.ListenAndServe()
+}
+
+func (m *MorningPost) Shutdown() error {
+	err := m.Server.Shutdown(m.ctx)
+	if err != nil && err.Error() != context.Canceled.Error() {
+		fmt.Fprintf(m.Stderr, "Error running server shutdown: %+v", err)
+	}
+	return m.Store.Save()
+}
+
+func (m *MorningPost) WaitForExit() error {
+	<-m.ctx.Done()
+	fmt.Fprintln(m.Stdout, "Please WAIT! Do not repeat this action")
+	return m.Shutdown()
+}
+
 func New(store *FileStore, opts ...Option) (*MorningPost, error) {
 	rand.Seed(time.Now().UTC().UnixNano())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	m := &MorningPost{
 		Client: &http.Client{
 			Timeout: DefaultHTTPTimeout,
 		},
+		ctx:          ctx,
 		ListenPort:   DefaultListenPort,
 		mu:           &sync.Mutex{},
 		NewsPageSize: DefaultNewsPageSize,
 		Stderr:       os.Stderr,
 		Stdout:       os.Stdout,
 		Store:        store,
+		stop:         stop,
 	}
 	for _, o := range opts {
 		err := o(m)
@@ -341,36 +375,13 @@ func Main() int {
 		fmt.Println(err)
 		return 1
 	}
-	http.HandleFunc("/", m.HandleHome)
-	http.HandleFunc("/feeds/", m.HandleFeeds)
-	http.HandleFunc("/news/", m.HandleNews)
-	listenAddr := fmt.Sprintf("0.0.0.0:%d", m.ListenPort)
-	httpServer := http.Server{
-		Addr: listenAddr,
-	}
-	idleConnections := make(chan struct{})
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-		<-sig
-		log.Print("Please WAIT! Do not send the same signal AGAIN!")
-		if err := httpServer.Shutdown(context.Background()); err != nil {
-			log.Printf("HTTP Server Shutdown Error: %v", err)
-		}
-		close(idleConnections)
-	}()
-	log.Printf("Listening at http://%s", listenAddr)
-	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
-		log.Printf("HTTP server ListenAndServe Error: %v", err)
-		return 1
-	}
-	<-idleConnections
-	err = m.Store.Save()
+	go m.Run()
+	err = m.WaitForExit()
 	if err != nil {
-		log.Println(err)
+		fmt.Fprintln(m.Stderr, err)
 		return 1
 	}
-	log.Printf("Done. Thank you! <3")
+	fmt.Fprintln(m.Stdout, "Done. Thank you! <3")
 	return 0
 }
 

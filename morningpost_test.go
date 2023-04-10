@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/thiagonache/morningpost"
+	"golang.org/x/sync/errgroup"
 )
 
 func newServerWithContentTypeResponse(t *testing.T, contentType string) *httptest.Server {
@@ -496,14 +497,14 @@ func TestFeedGetNews_ReturnsNewsFromFeed(t *testing.T) {
 	}{
 		{
 			contentType: "application/rss+xml",
-			desc:        "Given Response Content-Type application/rss+xml",
+			desc:        "Given Response Content-Type application/rss+xml and RSS body",
 		},
 		{
 			contentType: "application/xml",
-			desc:        "Given Response Content-Type application/xml",
+			desc:        "Given Response Content-Type application/xml and RSS body",
 		},
 		{
-			contentType: "text/xml; charset=UTF-8",
+			contentType: "text/xml; charset=UTF-8 and RSS body",
 			desc:        "Given Response Content-Type text/xml",
 		},
 	}
@@ -537,7 +538,7 @@ func TestFeedGetNews_ReturnsNewsFromFeed(t *testing.T) {
 	}
 }
 
-func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationAtomXML(t *testing.T) {
+func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationAtomXMLAndAtomBody(t *testing.T) {
 	want := []morningpost.News{
 		{
 			Feed:  "Chris's Wiki :: blog",
@@ -554,6 +555,33 @@ func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationAtomX
 	feed := morningpost.Feed{
 		Endpoint: ts.URL,
 		Type:     morningpost.FeedTypeAtom,
+	}
+	got, err := feed.GetNews()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
+
+func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationTextXMLAndRDFBody(t *testing.T) {
+	want := []morningpost.News{
+		{
+			Feed:  "Slashdot",
+			Title: "Ask Slashdot:  What Was Your Longest-Lived PC?",
+			URL:   "https://ask.slashdot.org/story/23/04/02/0058226/ask-slashdot-what-was-your-longest-lived-pc?utm_source=rss1.0mainlinkanon&utm_medium=feed",
+		},
+		{
+			Feed:  "Slashdot",
+			Title: "San Francisco Faces 'Doom Loop' from Office Workers Staying Home, Gutting Tax Base",
+			URL:   "https://it.slashdot.org/story/23/04/01/2059224/san-francisco-faces-doom-loop-from-office-workers-staying-home-gutting-tax-base?utm_source=rss1.0mainlinkanon&utm_medium=feed",
+		},
+	}
+	ts := newServerWithContentTypeAndBodyResponse(t, "text/xml", "testdata/rdf.xml")
+	feed := morningpost.Feed{
+		Endpoint: ts.URL,
+		Type:     morningpost.FeedTypeRDF,
 	}
 	got, err := feed.GetNews()
 	if err != nil {
@@ -1060,7 +1088,7 @@ func TestNewNews_ErrorsGiven(t *testing.T) {
 	}
 }
 
-func TestHandleNews_RenderProperHTMLPageGivenGetRequest(t *testing.T) {
+func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
   <th class="table-light" scope="row">
@@ -1123,33 +1151,44 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
   <th class="table-light" scope="row">
-    <a href="http://www.feedforall.com/restaurant.htm">RSS Solutions for Restaurants</a>
-    <small class="text-muted">FeedForAll Sample Feed</small>
+    <a href="http://fake.url/title3.htm">Title 3</a>
+    <small class="text-muted">Unit Test Feed</small>
   </th>
 </tr>
 <tr>
   <th class="table-light" scope="row">
-    <a href="http://www.feedforall.com/schools.htm">RSS Solutions for Schools and Colleges</a>
-    <small class="text-muted">FeedForAll Sample Feed</small>
+    <a href="http://fake.url/title4.htm">Title 4</a>
+    <small class="text-muted">Unit Test Feed</small>
   </th>
 </tr>
 `)
 	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m.NewsPageSize = 2
 	m.PageNews = []morningpost.News{
 		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Restaurants",
-			URL:   "http://www.feedforall.com/restaurant.htm",
+			Feed:  "Unit Test Feed",
+			Title: "Title 1",
+			URL:   "http://fake.url/title1.htm",
 		},
 		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Schools and Colleges",
-			URL:   "http://www.feedforall.com/schools.htm",
+			Feed:  "Unit Test Feed",
+			Title: "Title 2",
+			URL:   "http://fake.url/title2.htm",
+		},
+		{
+			Feed:  "Unit Test Feed",
+			Title: "Title 3",
+			URL:   "http://fake.url/title3.htm",
+		},
+		{
+			Feed:  "Unit Test Feed",
+			Title: "Title 4",
+			URL:   "http://fake.url/title4.htm",
 		},
 	}
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
 	defer ts.Close()
-	resp, err := http.Get(ts.URL)
+	resp, err := http.Get(ts.URL + "?page=2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1180,5 +1219,101 @@ func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithUnexpectedMethod(t *t
 	got := resp.StatusCode
 	if want != got {
 		t.Fatalf("want status code %d, got %d", want, got)
+	}
+}
+
+func TestRun_RespondsStatusOKGivenGETHome(t *testing.T) {
+	t.Parallel()
+	want := http.StatusOK
+	m, err := morningpost.New(
+		newFileStoreWithBogusPath(t),
+		morningpost.WithStderr(io.Discard),
+		morningpost.WithStdout(io.Discard),
+		morningpost.FromArgs([]string{"-p", "55000"}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := errgroup.Group{}
+	g.Go(m.Run)
+	resp, err := http.Get("http://localhost:55000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want response status code %d, got %d", want, got)
+	}
+	err = m.Shutdown()
+	if err != nil && err != http.ErrServerClosed {
+		t.Fatal(err)
+	}
+	err = g.Wait()
+	if err != nil && err != http.ErrServerClosed {
+		t.Fatal(err)
+	}
+}
+
+func TestRun_RespondsStatusOKGivenGETFeeds(t *testing.T) {
+	t.Parallel()
+	want := http.StatusOK
+	m, err := morningpost.New(
+		newFileStoreWithBogusPath(t),
+		morningpost.WithStderr(io.Discard),
+		morningpost.WithStdout(io.Discard),
+		morningpost.FromArgs([]string{"-p", "56000"}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := errgroup.Group{}
+	g.Go(m.Run)
+	resp, err := http.Get("http://localhost:56000/feeds/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want response status code %d, got %d", want, got)
+	}
+	err = m.Shutdown()
+	if err != nil && err != http.ErrServerClosed {
+		t.Fatal(err)
+	}
+	err = g.Wait()
+	if err != nil && err != http.ErrServerClosed {
+		t.Fatal(err)
+	}
+}
+
+func TestRun_RespondsStatusOKGivenGETNews(t *testing.T) {
+	t.Parallel()
+	want := http.StatusOK
+	m, err := morningpost.New(
+		newFileStoreWithBogusPath(t),
+		morningpost.WithStderr(io.Discard),
+		morningpost.WithStdout(io.Discard),
+		morningpost.FromArgs([]string{"-p", "57000"}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := errgroup.Group{}
+	g.Go(m.Run)
+	resp, err := http.Get("http://localhost:57000/news/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want response status code %d, got %d", want, got)
+	}
+	err = m.Shutdown()
+	if err != nil && err != http.ErrServerClosed {
+		t.Fatal(err)
+	}
+	err = g.Wait()
+	if err != nil && err != http.ErrServerClosed {
+		t.Fatal(err)
 	}
 }
