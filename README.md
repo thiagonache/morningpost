@@ -42,11 +42,9 @@ Visit our [documentation page](doc/README.md)
 - [x] Delete Feed
 - [x] Infinite scroll for News
 - [ ] Add `custom` Feed via Go `interface`
-- [ ] Decouple store
-- [ ] Improve test coverage
+- [x] Decouple store
 - [ ] Recommend new Feeds based on feeds already added
 - [ ] Recommend news based on previous News read
-- [ ] Do Auto-Discovery via [HTMX Active Search](https://htmx.org/examples/active-search/)
 
 ## Acknowledgements
 
