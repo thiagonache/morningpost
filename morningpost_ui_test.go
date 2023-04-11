@@ -13,10 +13,14 @@ import (
 )
 
 func setup(t *testing.T) func(t *testing.T) {
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{},
+		Path: t.TempDir() + "/store.db",
+	}
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStderr(io.Discard),
 		morningpost.WithStdout(io.Discard),
+		morningpost.WithFileStore(fileStore),
 		morningpost.FromArgs([]string{"-p", "58000"}),
 	)
 	if err != nil {

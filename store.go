@@ -3,9 +3,9 @@ package morningpost
 import (
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"os"
-	"path"
 
 	"golang.org/x/exp/maps"
 )
@@ -41,7 +41,7 @@ func (f *FileStore) Load() error {
 func (f *FileStore) Save() error {
 	file, err := os.Create(f.Path)
 	if err != nil {
-		return err
+		return fmt.Errorf("error saving store: %w", err)
 	}
 	defer file.Close()
 	enc := gob.NewEncoder(file)
@@ -50,34 +50,4 @@ func (f *FileStore) Save() error {
 
 func (f *FileStore) Delete(id uint64) {
 	delete(f.Data, id)
-}
-
-func NewFileStore(opts ...FileStoreOption) (*FileStore, error) {
-	fileStore := &FileStore{
-		Data: map[uint64]Feed{},
-		Path: userStateDir() + "/MorningPost/morningpost.db",
-	}
-	for _, o := range opts {
-		o(fileStore)
-	}
-	err := fileStore.Load()
-	if err != nil {
-		return nil, err
-	}
-	if _, err := os.Stat(path.Dir(fileStore.Path)); os.IsNotExist(err) {
-		err := os.MkdirAll(path.Dir(fileStore.Path), 0755)
-		if err != nil {
-			return nil, err
-		}
-
-	}
-	return fileStore, nil
-}
-
-type FileStoreOption func(*FileStore)
-
-func WithFileStorePath(path string) FileStoreOption {
-	return func(f *FileStore) {
-		f.Path = path
-	}
 }
