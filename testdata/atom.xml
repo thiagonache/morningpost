@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title type="html">Chris&#39;s Wiki :: blog</title>
+  <title type="html">Feed Unit test</title>
   <link rel="alternate" type="text/html" href="https://utcc.utoronto.ca/~cks/space/blog/" />
   <id>https://utcc.utoronto.ca/~cks/space/blog/?atom</id>
   <link rel="self" type="application/atom+xml" href="https://utcc.utoronto.ca/~cks/space/blog/?atom" />
   <generator>DWiki</generator>
   <updated>2023-03-10T03:39:52Z</updated>
-  <subtitle type="html">Recently changed pages in Chris&#39;s Wiki :: blog.</subtitle>
+  <subtitle type="html">Recently changed pages in Feed Unit test.</subtitle>
   <entry>
     <id>tag:cspace@cks.mef.org,2009-03-24:/blog/linux/ZFSAndNFSMountInvalidation</id>
-    <link rel="alternate" type="text/html" href="https://utcc.utoronto.ca/~cks/space/blog/linux/ZFSAndNFSMountInvalidation" />
+    <link rel="alternate" type="text/html" href="http://fake.url/news-1" />
     <author>
       <name>cks</name>
     </author>
@@ -78,14 +78,14 @@ over ZFS snapshot replication or if the receiver generates a new
 one.)&lt;/p&gt;
 &lt;/div&gt;
 &lt;div&gt; (&lt;a href=&quot;https://utcc.utoronto.ca/~cks/space/blog/linux/ZFSAndNFSMountInvalidation?showcomments#comments&quot;&gt;One comment&lt;/a&gt;.) &lt;/div&gt;</content>
-    <title type="html">ZFS on Linux and when you get stale NFSv3 mounts</title>
+    <title type="html">News #1</title>
     <category term="linux"/>
     <updated>2023-03-10T03:39:52Z</updated>
     <published>2023-03-10T03:38:51Z</published>
   </entry>
   <entry>
     <id>tag:cspace@cks.mef.org,2009-03-24:/blog/linux/DebconfWhiptailVsXterm</id>
-    <link rel="alternate" type="text/html" href="https://utcc.utoronto.ca/~cks/space/blog/linux/DebconfWhiptailVsXterm" />
+    <link rel="alternate" type="text/html" href="http://fake.url/news-2" />
     <author>
       <name>cks</name>
     </author>
@@ -175,7 +175,7 @@ In my regular xterms, this reports &#39;8&#39; (the basic number of ANSI
 colours), while &#39;&lt;code&gt;tput -T xterm-mono colors&lt;/code&gt;&#39; reports &#39;-1&#39;, ie &#39;no&#39;.&lt;/p&gt;
 &lt;/div&gt;
 &lt;div&gt; (&lt;a href=&quot;https://utcc.utoronto.ca/~cks/space/blog/linux/DebconfWhiptailVsXterm?showcomments#comments&quot;&gt;3 comments&lt;/a&gt;.) &lt;/div&gt;</content>
-    <title type="html">Debconf&#39;s questions, or really whiptail, doesn&#39;t always work in xterms</title>
+    <title type="html">News #2</title>
     <category term="linux"/>
     <updated>2023-03-09T04:13:31Z</updated>
     <published>2023-03-09T04:12:30Z</published>

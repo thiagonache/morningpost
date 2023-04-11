@@ -40,16 +40,16 @@ func newServerWithContentTypeAndBodyResponse(t *testing.T, contentType string, f
 	return ts
 }
 
-func generateOneThousandsNews(t *testing.T) []morningpost.News {
+func generateNews(count int) []morningpost.News {
 	allNews := []morningpost.News{}
-	for x := 0; x < 1000; x++ {
-		title := fmt.Sprintf("News #%d", x)
-		URL := fmt.Sprintf("http://fake.url/news-%d", x)
-		news, err := morningpost.NewNews("Feed Unit test", title, URL)
-		if err != nil {
-			t.Fatal(err)
-		}
-		allNews = append(allNews, news)
+	for x := 0; x < count; x++ {
+		title := fmt.Sprintf("News #%d", x+1)
+		URL := fmt.Sprintf("http://fake.url/news-%d", x+1)
+		allNews = append(allNews, morningpost.News{
+			Feed:  "Feed Unit test",
+			Title: title,
+			URL:   URL,
+		})
 	}
 	return allNews
 }
@@ -167,7 +167,6 @@ func TestNew_CreatesDirectoryGivenPathNotExist(t *testing.T) {
 	if info.Mode().Perm() != fs.FileMode(0755) {
 		t.Fatalf("want path %q permission %v, got %v", tempDir+"/directory/bogus", fs.FileMode(0755), info.Mode().Perm())
 	}
-
 }
 
 func TestFromArgs_ErrorsIfUnkownFlag(t *testing.T) {
@@ -326,18 +325,7 @@ func TestWithFileStore_SetsFileStorePathGivenCustomStore(t *testing.T) {
 
 func TestParseRSSResponse_ReturnsNewsGivenRSSFeedData(t *testing.T) {
 	t.Parallel()
-	want := []morningpost.News{
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Restaurants",
-			URL:   "http://www.feedforall.com/restaurant.htm",
-		},
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Schools and Colleges",
-			URL:   "http://www.feedforall.com/schools.htm",
-		},
-	}
+	want := generateNews(2)
 	file, err := os.Open("testdata/rss.xml")
 	if err != nil {
 		t.Fatalf("Cannot open file testdata/rss.xml: %+v", err)
@@ -356,33 +344,6 @@ func TestParseRSSResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	_, err := morningpost.ParseRSSResponse(strings.NewReader("{}"))
 	if err == nil {
 		t.Fatalf("want error but not found")
-	}
-}
-
-func TestParseRDFResponse_ReturnsNewsGivenRDFData(t *testing.T) {
-	t.Parallel()
-	want := []morningpost.News{
-		{
-			Feed:  "Slashdot",
-			Title: "Ask Slashdot:  What Was Your Longest-Lived PC?",
-			URL:   "https://ask.slashdot.org/story/23/04/02/0058226/ask-slashdot-what-was-your-longest-lived-pc?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-		{
-			Feed:  "Slashdot",
-			Title: "San Francisco Faces 'Doom Loop' from Office Workers Staying Home, Gutting Tax Base",
-			URL:   "https://it.slashdot.org/story/23/04/01/2059224/san-francisco-faces-doom-loop-from-office-workers-staying-home-gutting-tax-base?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-	}
-	rdf, err := os.Open("testdata/rdf.xml")
-	if err != nil {
-		t.Fatalf("Cannot read file content: %+v", err)
-	}
-	got, err := morningpost.ParseRDFResponse(rdf)
-	if err != nil {
-		t.Fatalf("Cannot parse rdf content: %+v", err)
-	}
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
 	}
 }
 
@@ -558,18 +519,7 @@ func TestFeedGetNews_ReturnsNewsFromFeed(t *testing.T) {
 			desc:        "Given Response Content-Type text/xml",
 		},
 	}
-	want := []morningpost.News{
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Restaurants",
-			URL:   "http://www.feedforall.com/restaurant.htm",
-		},
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Schools and Colleges",
-			URL:   "http://www.feedforall.com/schools.htm",
-		},
-	}
+	want := generateNews(2)
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			ts := newServerWithContentTypeAndBodyResponse(t, tC.contentType, "testdata/rss.xml")
@@ -589,18 +539,7 @@ func TestFeedGetNews_ReturnsNewsFromFeed(t *testing.T) {
 }
 
 func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationAtomXMLAndAtomBody(t *testing.T) {
-	want := []morningpost.News{
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "ZFS on Linux and when you get stale NFSv3 mounts",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/ZFSAndNFSMountInvalidation",
-		},
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "Debconf's questions, or really whiptail, doesn't always work in xterms",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/DebconfWhiptailVsXterm",
-		},
-	}
+	want := generateNews(2)
 	ts := newServerWithContentTypeAndBodyResponse(t, "application/atom+xml", "testdata/atom.xml")
 	feed := morningpost.Feed{
 		Endpoint: ts.URL,
@@ -616,18 +555,7 @@ func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationAtomX
 }
 
 func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationTextXMLAndRDFBody(t *testing.T) {
-	want := []morningpost.News{
-		{
-			Feed:  "Slashdot",
-			Title: "Ask Slashdot:  What Was Your Longest-Lived PC?",
-			URL:   "https://ask.slashdot.org/story/23/04/02/0058226/ask-slashdot-what-was-your-longest-lived-pc?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-		{
-			Feed:  "Slashdot",
-			Title: "San Francisco Faces 'Doom Loop' from Office Workers Staying Home, Gutting Tax Base",
-			URL:   "https://it.slashdot.org/story/23/04/01/2059224/san-francisco-faces-doom-loop-from-office-workers-staying-home-gutting-tax-base?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-	}
+	want := generateNews(2)
 	ts := newServerWithContentTypeAndBodyResponse(t, "text/xml", "testdata/rdf.xml")
 	feed := morningpost.Feed{
 		Endpoint: ts.URL,
@@ -761,33 +689,6 @@ func TestGetNews_ErrorsIfFeedGetNewsErrors(t *testing.T) {
 	}
 }
 
-func TestParseAtomResponse_ReturnsNewsGivenAtomWithTwoNews(t *testing.T) {
-	t.Parallel()
-	want := []morningpost.News{
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "ZFS on Linux and when you get stale NFSv3 mounts",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/ZFSAndNFSMountInvalidation",
-		},
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "Debconf's questions, or really whiptail, doesn't always work in xterms",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/DebconfWhiptailVsXterm",
-		},
-	}
-	file, err := os.Open("testdata/atom.xml")
-	if err != nil {
-		t.Fatalf("Cannot open file testdata/atom.xml: %+v", err)
-	}
-	got, err := morningpost.ParseAtomResponse(file)
-	if err != nil {
-		t.Fatalf("Cannot parse content: %+v", err)
-	}
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
-	}
-}
-
 func TestParseAtomResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	t.Parallel()
 	_, err := morningpost.ParseAtomResponse(strings.NewReader("{}"))
@@ -816,7 +717,7 @@ func TestAddNews_AddsCorrectNewsGivenConcurrentAccess(t *testing.T) {
 	t.Parallel()
 	want := 1000
 	m := newMorningPostWithIODiscard(t)
-	allNews := generateOneThousandsNews(t)
+	allNews := generateNews(1000)
 	var wg sync.WaitGroup
 	for x := 0; x < 1000; x++ {
 		wg.Add(1)
@@ -1154,8 +1055,8 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
   <th class="table-light" scope="row">
-    <a href="http://fake.url/title1.htm">Title 1</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-1">News #1</a>
+    <small class="text-muted">Feed Unit test</small>
   </th>
 </tr>
 <tr
@@ -1164,35 +1065,14 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
   hx-swap="afterend"
 >
   <th class="table-light" scope="row">
-    <a href="http://fake.url/title2.htm">Title 2</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-2">News #2</a>
+    <small class="text-muted">Feed Unit test</small>
   </th>
 </tr>
 `)
 	m := newMorningPostWithIODiscard(t)
 	m.NewsPageSize = 2
-	m.PageNews = []morningpost.News{
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 1",
-			URL:   "http://fake.url/title1.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 2",
-			URL:   "http://fake.url/title2.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 3",
-			URL:   "http://fake.url/title3.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 4",
-			URL:   "http://fake.url/title4.htm",
-		},
-	}
+	m.PageNews = generateNews(3)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
 	defer ts.Close()
 	resp, err := http.Get(ts.URL)
