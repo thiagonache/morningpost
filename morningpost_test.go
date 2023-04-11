@@ -2,8 +2,10 @@ package morningpost_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,7 +20,6 @@ import (
 )
 
 func newServerWithContentTypeResponse(t *testing.T, contentType string) *httptest.Server {
-	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", contentType)
 	}))
@@ -27,7 +28,6 @@ func newServerWithContentTypeResponse(t *testing.T, contentType string) *httptes
 }
 
 func newServerWithContentTypeAndBodyResponse(t *testing.T, contentType string, filePath string) *httptest.Server {
-	t.Helper()
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		t.Fatal(err)
@@ -40,30 +40,16 @@ func newServerWithContentTypeAndBodyResponse(t *testing.T, contentType string, f
 	return ts
 }
 
-func newMorningPostWithBogusFileStoreAndNoOutput(t *testing.T) *morningpost.MorningPost {
-	t.Helper()
-	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
-		morningpost.WithStdout(io.Discard),
-		morningpost.WithStderr(io.Discard),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return m
-}
-
-func generateOneThousandsNews(t *testing.T) []morningpost.News {
-	t.Helper()
+func generateNews(count int) []morningpost.News {
 	allNews := []morningpost.News{}
-	for x := 0; x < 1000; x++ {
-		title := fmt.Sprintf("News #%d", x)
-		URL := fmt.Sprintf("http://fake.url/news-%d", x)
-		news, err := morningpost.NewNews("Feed Unit test", title, URL)
-		if err != nil {
-			t.Fatal(err)
-		}
-		allNews = append(allNews, news)
+	for x := 0; x < count; x++ {
+		title := fmt.Sprintf("News #%d", x+1)
+		URL := fmt.Sprintf("http://fake.url/news-%d", x+1)
+		allNews = append(allNews, morningpost.News{
+			Feed:  "Feed Unit test",
+			Title: title,
+			URL:   URL,
+		})
 	}
 	return allNews
 }
@@ -80,10 +66,33 @@ func removeEmptyLines(data []byte) []byte {
 	return buf.Bytes()
 }
 
+func newMorningPostWithIODiscard(t *testing.T) *morningpost.MorningPost {
+	m, err := morningpost.New(
+		morningpost.WithStdout(io.Discard),
+		morningpost.WithStderr(io.Discard),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func newMorningPostWithIODiscardAndGivenFileStore(t *testing.T, fileStore *morningpost.FileStore) *morningpost.MorningPost {
+	m, err := morningpost.New(
+		morningpost.WithStdout(io.Discard),
+		morningpost.WithStderr(io.Discard),
+		morningpost.WithFileStore(fileStore),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
 func TestNew_SetsDefaultNewsPageSizeByDefault(t *testing.T) {
 	t.Parallel()
 	want := morningpost.DefaultNewsPageSize
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got := m.NewsPageSize
 	if want != got {
 		t.Fatalf("want ShowMaxNews %d but got %d", want, got)
@@ -93,7 +102,7 @@ func TestNew_SetsDefaultNewsPageSizeByDefault(t *testing.T) {
 func TestNew_SetsDefaultListenPortByDefault(t *testing.T) {
 	t.Parallel()
 	want := morningpost.DefaultListenPort
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got := m.ListenPort
 	if want != got {
 		t.Fatalf("want DefaultListenPort %d, got %d", want, got)
@@ -104,7 +113,6 @@ func TestNew_SetsStderrByDefault(t *testing.T) {
 	t.Parallel()
 	want := os.Stderr
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStdout(io.Discard),
 	)
 	if err != nil {
@@ -120,7 +128,6 @@ func TestNew_SetsStdoutByDefault(t *testing.T) {
 	t.Parallel()
 	want := os.Stdout
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStderr(io.Discard),
 	)
 	if err != nil {
@@ -135,10 +142,30 @@ func TestNew_SetsStdoutByDefault(t *testing.T) {
 func TestNew_SetsHTTPTimeoutByDefault(t *testing.T) {
 	t.Parallel()
 	want := morningpost.DefaultHTTPTimeout
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got := m.Client.Timeout
 	if want != got {
 		t.Fatalf("want timeout %v, got %v", want, got)
+	}
+}
+
+func TestNew_CreatesDirectoryGivenPathNotExist(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{},
+		Path: tempDir + "/directory/bogus/file.db",
+	}
+	_ = newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
+	info, err := os.Stat(tempDir + "/directory/bogus")
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("want path %q to exist but it doesn't", tempDir+"/directory/bogus")
+	}
+	if !info.IsDir() {
+		t.Fatalf("want path %q to be a directory but it is not", tempDir+"/directory/bogus")
+	}
+	if info.Mode().Perm() != fs.FileMode(0755) {
+		t.Fatalf("want path %q permission %v, got %v", tempDir+"/directory/bogus", fs.FileMode(0755), info.Mode().Perm())
 	}
 }
 
@@ -146,7 +173,7 @@ func TestFromArgs_ErrorsIfUnkownFlag(t *testing.T) {
 	t.Parallel()
 	args := []string{"-asdfaewrawers", "8080"}
 	_, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
+		morningpost.WithStdout(io.Discard),
 		morningpost.WithStderr(io.Discard),
 		morningpost.FromArgs(args),
 	)
@@ -160,7 +187,8 @@ func TestFromArgs_pFlagSetListenPort(t *testing.T) {
 	want := 8080
 	args := []string{"-p", "8080"}
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
+		morningpost.WithStdout(io.Discard),
+		morningpost.WithStderr(io.Discard),
 		morningpost.FromArgs(args),
 	)
 	if err != nil {
@@ -176,7 +204,8 @@ func TestFromArgs_SetsListenPortByDefaultToDefaultListenPort(t *testing.T) {
 	t.Parallel()
 	want := morningpost.DefaultListenPort
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
+		morningpost.WithStdout(io.Discard),
+		morningpost.WithStderr(io.Discard),
 		morningpost.FromArgs([]string{}),
 	)
 	if err != nil {
@@ -191,7 +220,7 @@ func TestFromArgs_SetsListenPortByDefaultToDefaultListenPort(t *testing.T) {
 func TestWithStderr_ErrorsIfInputIsNil(t *testing.T) {
 	t.Parallel()
 	_, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
+		morningpost.WithStdout(io.Discard),
 		morningpost.WithStderr(nil),
 	)
 	if err == nil {
@@ -204,7 +233,7 @@ func TestWithStderr_SetsStderrGivenWriter(t *testing.T) {
 	want := "this is a string\n"
 	buf := &bytes.Buffer{}
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
+		morningpost.WithStdout(io.Discard),
 		morningpost.WithStderr(buf),
 	)
 	if err != nil {
@@ -220,8 +249,8 @@ func TestWithStderr_SetsStderrGivenWriter(t *testing.T) {
 func TestWithStdout_ErrorsIfInputIsNil(t *testing.T) {
 	t.Parallel()
 	_, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStdout(nil),
+		morningpost.WithStderr(io.Discard),
 	)
 	if err == nil {
 		t.Fatal("want error but got nil")
@@ -233,8 +262,8 @@ func TestWithStdout_SetsStdoutGivenWriter(t *testing.T) {
 	want := "this is a string\n"
 	buf := &bytes.Buffer{}
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStdout(buf),
+		morningpost.WithStderr(io.Discard),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +278,8 @@ func TestWithStdout_SetsStdoutGivenWriter(t *testing.T) {
 func TestWithClient_ErrorsIfInputIsNil(t *testing.T) {
 	t.Parallel()
 	_, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
+		morningpost.WithStdout(io.Discard),
+		morningpost.WithStderr(io.Discard),
 		morningpost.WithClient(nil),
 	)
 	if err == nil {
@@ -261,7 +291,8 @@ func TestWithClient_SetsDisableKeepAlivesGivenHTTPClientWithKeepAlivesDisabled(t
 	t.Parallel()
 	want := true
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
+		morningpost.WithStdout(io.Discard),
+		morningpost.WithStderr(io.Discard),
 		morningpost.WithClient(&http.Client{
 			Transport: &http.Transport{
 				DisableKeepAlives: true,
@@ -277,20 +308,24 @@ func TestWithClient_SetsDisableKeepAlivesGivenHTTPClientWithKeepAlivesDisabled(t
 	}
 }
 
+func TestWithFileStore_SetsFileStorePathGivenCustomStore(t *testing.T) {
+	t.Parallel()
+	tempdir := t.TempDir()
+	want := tempdir + "data/store.db"
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{},
+		Path: tempdir + "data/store.db",
+	}
+	m := newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
+	got := m.FileStorePath()
+	if want != got {
+		t.Fatalf("want store path %q, got %q", want, got)
+	}
+}
+
 func TestParseRSSResponse_ReturnsNewsGivenRSSFeedData(t *testing.T) {
 	t.Parallel()
-	want := []morningpost.News{
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Restaurants",
-			URL:   "http://www.feedforall.com/restaurant.htm",
-		},
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Schools and Colleges",
-			URL:   "http://www.feedforall.com/schools.htm",
-		},
-	}
+	want := generateNews(2)
 	file, err := os.Open("testdata/rss.xml")
 	if err != nil {
 		t.Fatalf("Cannot open file testdata/rss.xml: %+v", err)
@@ -312,33 +347,6 @@ func TestParseRSSResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	}
 }
 
-func TestParseRDFResponse_ReturnsNewsGivenRDFData(t *testing.T) {
-	t.Parallel()
-	want := []morningpost.News{
-		{
-			Feed:  "Slashdot",
-			Title: "Ask Slashdot:  What Was Your Longest-Lived PC?",
-			URL:   "https://ask.slashdot.org/story/23/04/02/0058226/ask-slashdot-what-was-your-longest-lived-pc?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-		{
-			Feed:  "Slashdot",
-			Title: "San Francisco Faces 'Doom Loop' from Office Workers Staying Home, Gutting Tax Base",
-			URL:   "https://it.slashdot.org/story/23/04/01/2059224/san-francisco-faces-doom-loop-from-office-workers-staying-home-gutting-tax-base?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-	}
-	rdf, err := os.Open("testdata/rdf.xml")
-	if err != nil {
-		t.Fatalf("Cannot read file content: %+v", err)
-	}
-	got, err := morningpost.ParseRDFResponse(rdf)
-	if err != nil {
-		t.Fatalf("Cannot parse rdf content: %+v", err)
-	}
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
-	}
-}
-
 func TestParseRDFResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	t.Parallel()
 	_, err := morningpost.ParseRDFResponse(strings.NewReader("{}"))
@@ -350,7 +358,7 @@ func TestParseRDFResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 func TestHandleFeeds_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
 	defer ts.Close()
 	req, err := http.NewRequest("bogus", ts.URL, nil)
@@ -369,7 +377,7 @@ func TestHandleFeeds_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testi
 
 func TestHandleFeeds_AnswersStatusOKGivenRequestWithMethodHead(t *testing.T) {
 	t.Parallel()
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
 	defer ts.Close()
 	resp, err := http.Head(ts.URL)
@@ -384,7 +392,7 @@ func TestHandleFeeds_AnswersStatusOKGivenRequestWithMethodHead(t *testing.T) {
 func TestHandleFeeds_ReturnsExpectedStatusCodeGivenRequestWithMethodPostAndBody(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	tsHandler := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
 	defer tsHandler.Close()
 	ts := newServerWithContentTypeAndBodyResponse(t, "application/rss+xml", "testdata/rss.xml")
@@ -404,7 +412,7 @@ func TestHandleFeeds_ReturnsExpectedStatusCodeGivenRequestWithMethodPostAndBody(
 func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndNoBody(t *testing.T) {
 	t.Parallel()
 	want := http.StatusBadRequest
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
 	defer ts.Close()
 	resp, err := http.PostForm(ts.URL, nil)
@@ -420,7 +428,7 @@ func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndNoBody(t *tes
 func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndBlankSpacesInBodyURL(t *testing.T) {
 	t.Parallel()
 	want := http.StatusBadRequest
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
 	defer ts.Close()
 	reqBody := url.Values{
@@ -443,15 +451,17 @@ func TestHandleFeeds_DeleteFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testin
 			Endpoint: "https://fake-https.url",
 		},
 	}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
-	m.Store.Data = map[uint64]morningpost.Feed{
-		0: {
-			Endpoint: "http://fake-http.url",
-		},
-		1: {
-			Endpoint: "https://fake-https.url",
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{
+			0: {
+				Endpoint: "http://fake-http.url",
+			},
+			1: {
+				Endpoint: "https://fake-https.url",
+			},
 		},
 	}
+	m := newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
 	defer ts.Close()
 	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/0", nil)
@@ -465,15 +475,16 @@ func TestHandleFeeds_DeleteFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testin
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected response status code %q", resp.Status)
 	}
-	got := m.Store.Data
+	got := m.FileStoreData()
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 }
+
 func TestHandleHome_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleHome))
 	defer ts.Close()
 	req, err := http.NewRequest("bogus", ts.URL, nil)
@@ -508,18 +519,7 @@ func TestFeedGetNews_ReturnsNewsFromFeed(t *testing.T) {
 			desc:        "Given Response Content-Type text/xml",
 		},
 	}
-	want := []morningpost.News{
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Restaurants",
-			URL:   "http://www.feedforall.com/restaurant.htm",
-		},
-		{
-			Feed:  "FeedForAll Sample Feed",
-			Title: "RSS Solutions for Schools and Colleges",
-			URL:   "http://www.feedforall.com/schools.htm",
-		},
-	}
+	want := generateNews(2)
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			ts := newServerWithContentTypeAndBodyResponse(t, tC.contentType, "testdata/rss.xml")
@@ -539,18 +539,7 @@ func TestFeedGetNews_ReturnsNewsFromFeed(t *testing.T) {
 }
 
 func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationAtomXMLAndAtomBody(t *testing.T) {
-	want := []morningpost.News{
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "ZFS on Linux and when you get stale NFSv3 mounts",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/ZFSAndNFSMountInvalidation",
-		},
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "Debconf's questions, or really whiptail, doesn't always work in xterms",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/DebconfWhiptailVsXterm",
-		},
-	}
+	want := generateNews(2)
 	ts := newServerWithContentTypeAndBodyResponse(t, "application/atom+xml", "testdata/atom.xml")
 	feed := morningpost.Feed{
 		Endpoint: ts.URL,
@@ -566,18 +555,7 @@ func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationAtomX
 }
 
 func TestFeedGetNews_ReturnsNewsFromFeedGivenResponseContentTypeApplicationTextXMLAndRDFBody(t *testing.T) {
-	want := []morningpost.News{
-		{
-			Feed:  "Slashdot",
-			Title: "Ask Slashdot:  What Was Your Longest-Lived PC?",
-			URL:   "https://ask.slashdot.org/story/23/04/02/0058226/ask-slashdot-what-was-your-longest-lived-pc?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-		{
-			Feed:  "Slashdot",
-			Title: "San Francisco Faces 'Doom Loop' from Office Workers Staying Home, Gutting Tax Base",
-			URL:   "https://it.slashdot.org/story/23/04/01/2059224/san-francisco-faces-doom-loop-from-office-workers-staying-home-gutting-tax-base?utm_source=rss1.0mainlinkanon&utm_medium=feed",
-		},
-	}
+	want := generateNews(2)
 	ts := newServerWithContentTypeAndBodyResponse(t, "text/xml", "testdata/rdf.xml")
 	feed := morningpost.Feed{
 		Endpoint: ts.URL,
@@ -645,19 +623,23 @@ func TestFeedGetNews_ErrorsIfResponseContentTypeIsUnexpected(t *testing.T) {
 func TestGetNews_ReturnsNewsFromAllFeedsGivenPopulatedStore(t *testing.T) {
 	t.Parallel()
 	want := 2
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{},
+		Path: t.TempDir() + "/store.db",
+	}
 	ts1 := newServerWithContentTypeAndBodyResponse(t, "application/rss+xml", "testdata/rss-with-one-news-1.xml")
 	feed1 := morningpost.Feed{
 		Endpoint: ts1.URL,
 		Type:     morningpost.FeedTypeRSS,
 	}
-	m.Store.Data[0] = feed1
+	fileStore.Data[0] = feed1
 	ts2 := newServerWithContentTypeAndBodyResponse(t, "application/rss+xml", "testdata/rss-with-one-news-2.xml")
 	feed2 := morningpost.Feed{
 		Endpoint: ts2.URL,
 		Type:     morningpost.FeedTypeRSS,
 	}
-	m.Store.Data[1] = feed2
+	fileStore.Data[1] = feed2
+	m := newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
 	err := m.GetNews()
 	if err != nil {
 		t.Fatal(err)
@@ -671,7 +653,11 @@ func TestGetNews_ReturnsNewsFromAllFeedsGivenPopulatedStore(t *testing.T) {
 func TestGetNews_CleansUpNewsOnEachExecution(t *testing.T) {
 	t.Parallel()
 	want := 0
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{},
+		Path: t.TempDir() + "/store.db",
+	}
+	m := newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
 	m.News = []morningpost.News{{
 		Title: "I hope it disappear",
 		URL:   "http://fake.url/fake-news",
@@ -688,41 +674,18 @@ func TestGetNews_CleansUpNewsOnEachExecution(t *testing.T) {
 
 func TestGetNews_ErrorsIfFeedGetNewsErrors(t *testing.T) {
 	t.Parallel()
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{},
+		Path: t.TempDir() + "/store.db",
+	}
 	feed := morningpost.Feed{
 		Endpoint: "bogus://",
 	}
-	m.Store.Data[0] = feed
+	fileStore.Data[0] = feed
+	m := newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
 	err := m.GetNews()
 	if err == nil {
 		t.Fatal("want error but got nil")
-	}
-}
-
-func TestParseAtomResponse_ReturnsNewsGivenAtomWithTwoNews(t *testing.T) {
-	t.Parallel()
-	want := []morningpost.News{
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "ZFS on Linux and when you get stale NFSv3 mounts",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/ZFSAndNFSMountInvalidation",
-		},
-		{
-			Feed:  "Chris's Wiki :: blog",
-			Title: "Debconf's questions, or really whiptail, doesn't always work in xterms",
-			URL:   "https://utcc.utoronto.ca/~cks/space/blog/linux/DebconfWhiptailVsXterm",
-		},
-	}
-	file, err := os.Open("testdata/atom.xml")
-	if err != nil {
-		t.Fatalf("Cannot open file testdata/atom.xml: %+v", err)
-	}
-	got, err := morningpost.ParseAtomResponse(file)
-	if err != nil {
-		t.Fatalf("Cannot parse content: %+v", err)
-	}
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
 	}
 }
 
@@ -737,7 +700,7 @@ func TestParseAtomResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 func TestHandleHome_AnswersNotFoundForUnkownRoute(t *testing.T) {
 	t.Parallel()
 	want := http.StatusNotFound
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleHome))
 	defer ts.Close()
 	resp, err := http.Get(ts.URL + "/bogus")
@@ -753,8 +716,8 @@ func TestHandleHome_AnswersNotFoundForUnkownRoute(t *testing.T) {
 func TestAddNews_AddsCorrectNewsGivenConcurrentAccess(t *testing.T) {
 	t.Parallel()
 	want := 1000
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
-	allNews := generateOneThousandsNews(t)
+	m := newMorningPostWithIODiscard(t)
+	allNews := generateNews(1000)
 	var wg sync.WaitGroup
 	for x := 0; x < 1000; x++ {
 		wg.Add(1)
@@ -855,7 +818,7 @@ func TestFindFeeds_ErrorsIfStatusCodeIsNotStatusOK(t *testing.T) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 	defer ts.Close()
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	_, err := m.FindFeeds(ts.URL)
 	if err == nil {
 		t.Fatal("want error but got nil")
@@ -864,7 +827,7 @@ func TestFindFeeds_ErrorsIfStatusCodeIsNotStatusOK(t *testing.T) {
 
 func TestFindFeeds_ErrorsGivenURLWithSchemeBogus(t *testing.T) {
 	t.Parallel()
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	_, err := m.FindFeeds("bogus://")
 	if err == nil {
 		t.Fatal("want error but got nil")
@@ -874,7 +837,7 @@ func TestFindFeeds_ErrorsGivenURLWithSchemeBogus(t *testing.T) {
 func TestFindFeeds_ErrorsGivenUnexpectedContentType(t *testing.T) {
 	t.Parallel()
 	ts := newServerWithContentTypeResponse(t, "bogus")
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	_, err := m.FindFeeds(ts.URL)
 	if err == nil {
 		t.Fatal("want error but got nil")
@@ -888,7 +851,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenApplicationRSSXMLContentType(t *test
 		Endpoint: ts.URL,
 		Type:     morningpost.FeedTypeRSS,
 	}}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -905,7 +868,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenApplicationXMLContentTypeAndRSSData(
 		Endpoint: ts.URL,
 		Type:     morningpost.FeedTypeRSS,
 	}}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -922,7 +885,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenTextXMLContentTypeAndRSSData(t *test
 		Endpoint: ts.URL,
 		Type:     morningpost.FeedTypeRSS,
 	}}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -939,7 +902,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenTextXMLContentTypeAndRDFData(t *test
 		Endpoint: ts.URL,
 		Type:     morningpost.FeedTypeRDF,
 	}}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -956,7 +919,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenAtomApplicationContentType(t *testin
 		Endpoint: ts.URL,
 		Type:     "Atom",
 	}}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -989,7 +952,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenHTMLPageWithFeedsInFullLinkFormat(t 
 		}
 	}))
 	defer ts.Close()
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -1017,7 +980,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenHTMLPageWithFeedInRelativeLinkFormat
 			Type:     morningpost.FeedTypeRSS,
 		},
 	}
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	got, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -1044,7 +1007,7 @@ func TestFeedFinds_SetsHeadersOnHTTPRequest(t *testing.T) {
 		w.Write([]byte(`<rss></rss>`))
 	}))
 	defer ts.Close()
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	_, err := m.FindFeeds(ts.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -1092,8 +1055,8 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
   <th class="table-light" scope="row">
-    <a href="http://fake.url/title1.htm">Title 1</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-1">News #1</a>
+    <small class="text-muted">Feed Unit test</small>
   </th>
 </tr>
 <tr
@@ -1102,35 +1065,14 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
   hx-swap="afterend"
 >
   <th class="table-light" scope="row">
-    <a href="http://fake.url/title2.htm">Title 2</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-2">News #2</a>
+    <small class="text-muted">Feed Unit test</small>
   </th>
 </tr>
 `)
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	m.NewsPageSize = 2
-	m.PageNews = []morningpost.News{
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 1",
-			URL:   "http://fake.url/title1.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 2",
-			URL:   "http://fake.url/title2.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 3",
-			URL:   "http://fake.url/title3.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 4",
-			URL:   "http://fake.url/title4.htm",
-		},
-	}
+	m.PageNews = generateNews(3)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
 	defer ts.Close()
 	resp, err := http.Get(ts.URL)
@@ -1162,7 +1104,7 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
   </th>
 </tr>
 `)
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	m.NewsPageSize = 2
 	m.PageNews = []morningpost.News{
 		{
@@ -1205,7 +1147,7 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithUnexpectedMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
-	m := newMorningPostWithBogusFileStoreAndNoOutput(t)
+	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
 	defer ts.Close()
 	req, err := http.NewRequest("bogus", ts.URL, nil)
@@ -1225,10 +1167,14 @@ func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithUnexpectedMethod(t *t
 func TestRun_RespondsStatusOKGivenGETHome(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
+	fileStore := &morningpost.FileStore{
+		Data: map[uint64]morningpost.Feed{},
+		Path: t.TempDir() + "/store.db",
+	}
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStderr(io.Discard),
 		morningpost.WithStdout(io.Discard),
+		morningpost.WithFileStore(fileStore),
 		morningpost.FromArgs([]string{"-p", "55000"}),
 	)
 	if err != nil {
@@ -1258,7 +1204,6 @@ func TestRun_RespondsStatusOKGivenGETFeeds(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStderr(io.Discard),
 		morningpost.WithStdout(io.Discard),
 		morningpost.FromArgs([]string{"-p", "56000"}),
@@ -1290,7 +1235,6 @@ func TestRun_RespondsStatusOKGivenGETNews(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
 	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
 		morningpost.WithStderr(io.Discard),
 		morningpost.WithStdout(io.Discard),
 		morningpost.FromArgs([]string{"-p", "57000"}),

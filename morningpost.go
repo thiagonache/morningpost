@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -58,6 +59,7 @@ func NewNews(feed, title, URL string) (News, error) {
 type MorningPost struct {
 	Client       *http.Client
 	ctx          context.Context
+	fileStore    *FileStore
 	ListenPort   int
 	NewsPageSize int
 	PageNews     []News
@@ -65,7 +67,6 @@ type MorningPost struct {
 	Stderr       io.Writer
 	Stdout       io.Writer
 	stop         context.CancelFunc
-	Store        *FileStore
 
 	mu   *sync.Mutex
 	News []News
@@ -75,7 +76,7 @@ func (m *MorningPost) GetNews() error {
 	m.EmptyNews()
 	defer m.RandomNews()
 	g := new(errgroup.Group)
-	for _, feed := range m.Store.GetAll() {
+	for _, feed := range m.fileStore.GetAll() {
 		feed := feed
 		g.Go(func() error {
 			news, err := feed.GetNews()
@@ -186,15 +187,15 @@ func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, feed := range feeds {
-			m.Store.Add(feed)
+			m.fileStore.Add(feed)
 		}
-		err = RenderHTMLTemplate(w, "templates/feeds.gohtml", m.Store.GetAll())
+		err = RenderHTMLTemplate(w, "templates/feeds.gohtml", m.fileStore.GetAll())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	case http.MethodGet:
-		err := RenderHTMLTemplate(w, "templates/feeds.gohtml", m.Store.GetAll())
+		err := RenderHTMLTemplate(w, "templates/feeds.gohtml", m.fileStore.GetAll())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -206,7 +207,7 @@ func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		m.Store.Delete(ui64)
+		m.fileStore.Delete(ui64)
 	default:
 		fmt.Fprintln(m.Stderr, "Method not allowed")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -282,6 +283,10 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MorningPost) Run() error {
+	err := m.fileStore.Load()
+	if err != nil {
+		return err
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", m.HandleHome)
 	mux.HandleFunc("/feeds/", m.HandleFeeds)
@@ -299,7 +304,7 @@ func (m *MorningPost) Shutdown() error {
 	if err != nil && err.Error() != context.Canceled.Error() {
 		fmt.Fprintf(m.Stderr, "Error running server shutdown: %+v", err)
 	}
-	return m.Store.Save()
+	return m.fileStore.Save()
 }
 
 func (m *MorningPost) WaitForExit() error {
@@ -308,24 +313,41 @@ func (m *MorningPost) WaitForExit() error {
 	return m.Shutdown()
 }
 
-func New(store *FileStore, opts ...Option) (*MorningPost, error) {
+func (m *MorningPost) FileStorePath() string {
+	return m.fileStore.Path
+}
+
+func (m *MorningPost) FileStoreData() map[uint64]Feed {
+	return m.fileStore.Data
+}
+
+func New(opts ...Option) (*MorningPost, error) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	m := &MorningPost{
 		Client: &http.Client{
 			Timeout: DefaultHTTPTimeout,
 		},
-		ctx:          ctx,
+		ctx: ctx,
+		fileStore: &FileStore{
+			Data: map[uint64]Feed{},
+			Path: userStateDir() + "/MorningPost/morningpost.db",
+		},
 		ListenPort:   DefaultListenPort,
 		mu:           &sync.Mutex{},
 		NewsPageSize: DefaultNewsPageSize,
 		Stderr:       os.Stderr,
 		Stdout:       os.Stdout,
-		Store:        store,
 		stop:         stop,
 	}
 	for _, o := range opts {
 		err := o(m)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if _, err := os.Stat(path.Dir(m.fileStore.Path)); os.IsNotExist(err) {
+		err := os.MkdirAll(path.Dir(m.fileStore.Path), 0755)
 		if err != nil {
 			return nil, err
 		}
@@ -363,12 +385,7 @@ func userStateDir() string {
 }
 
 func Main() int {
-	fileStore, err := NewFileStore()
-	if err != nil {
-		fmt.Println(err)
-		return 1
-	}
-	m, err := New(fileStore,
+	m, err := New(
 		FromArgs(os.Args[1:]),
 	)
 	if err != nil {
@@ -636,6 +653,13 @@ func WithClient(c *http.Client) Option {
 			return errors.New("HTTP client cannot be nil")
 		}
 		m.Client = c
+		return nil
+	}
+}
+
+func WithFileStore(f *FileStore) Option {
+	return func(m *MorningPost) error {
+		m.fileStore = f
 		return nil
 	}
 }

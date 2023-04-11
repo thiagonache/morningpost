@@ -10,7 +10,7 @@
     xmlns:taxo="http://purl.org/rss/1.0/modules/taxonomy/">
 
     <channel rdf:about="https://slashdot.org/">
-        <title>Slashdot</title>
+        <title>Feed Unit test</title>
         <link>https://slashdot.org/</link>
         <description>News for nerds, stuff that matters</description>
         <dc:language>en-us</dc:language>
@@ -50,8 +50,8 @@
         <link>https://slashdot.org/</link>
     </image>
     <item rdf:about="https://ask.slashdot.org/story/23/04/02/0058226/ask-slashdot-what-was-your-longest-lived-pc?utm_source=rss1.0mainlinkanon&amp;utm_medium=feed">
-        <title>Ask Slashdot:  What Was Your Longest-Lived PC?</title>
-        <link>https://ask.slashdot.org/story/23/04/02/0058226/ask-slashdot-what-was-your-longest-lived-pc?utm_source=rss1.0mainlinkanon&amp;utm_medium=feed</link>
+        <title>News #1</title>
+        <link>http://fake.url/news-1</link>
         <description>Replacing their main machine, long-time Slashdot reader shanen had a sobering thought. "Considering how many years it's lasted and adding that number to my own age, I wouldn't want to bet on who will outlast which." And this prompted a look back at all the computers used over a lifetime:
 
 I've purchased at least 15 personal computers over the decades. Might be more like 20 and couldn't even count how many company computers I've used for various classes and work. Then there were the computer labs filled with my students. 
@@ -84,8 +84,8 @@ What was the brand of your longest-lived PC &amp;mdash; and how long do you expe
         <slash:hit_parade>89,89,86,68,11,3,0</slash:hit_parade>
     </item>
     <item rdf:about="https://it.slashdot.org/story/23/04/01/2059224/san-francisco-faces-doom-loop-from-office-workers-staying-home-gutting-tax-base?utm_source=rss1.0mainlinkanon&amp;utm_medium=feed">
-        <title>San Francisco Faces 'Doom Loop' from Office Workers Staying Home, Gutting Tax Base</title>
-        <link>https://it.slashdot.org/story/23/04/01/2059224/san-francisco-faces-doom-loop-from-office-workers-staying-home-gutting-tax-base?utm_source=rss1.0mainlinkanon&amp;utm_medium=feed</link>
+        <title>News #2</title>
+        <link>http://fake.url/news-2</link>
         <description>Today a warning was published from the editorial board of the San Francisco Chronicle. "Experts say post-pandemic woes stemming from office workers staying home instead of commuting into the city could send San Francisco into a 'doom loop' that would gut its tax base, decimate fare-reliant regional transit systems like BART and trap it in an economic death spiral...."
 
 Despite our housing crisis, it was years into the COVID pandemic before our leaders meaningfully questioned the logic of reserving some of the most prized real estate on Earth for fickle suburbanites and their cars. Downtown, after all, was San Francisco's golden goose. Companies in downtown offices accounted for 70% of San Francisco's pre-pandemic jobs and generated nearly 80% of its economic output, according to city economist Ted Egan. And so we wasted generous federal COVID emergency funds trying to bludgeon, cajole and pray for office workers to return downtown instead of planning for change. We're now staring down the consequences for that lack of vision. 
