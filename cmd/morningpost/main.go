@@ -1,11 +1,13 @@
 package main
 
 import (
-	"os"
+	"log"
 
 	"github.com/thiagonache/morningpost"
 )
 
 func main() {
-	os.Exit(morningpost.Main())
+	if err := morningpost.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
