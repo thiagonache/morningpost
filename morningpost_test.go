@@ -2,10 +2,8 @@ package morningpost_test
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -81,11 +79,11 @@ func newMorningPostWithIODiscardAndGivenFileStore(t *testing.T, fileStore *morni
 	m, err := morningpost.New(
 		morningpost.WithStdout(io.Discard),
 		morningpost.WithStderr(io.Discard),
-		morningpost.WithFileStore(fileStore),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	m.FileStore = fileStore
 	return m
 }
 
@@ -99,13 +97,13 @@ func TestNew_SetsDefaultNewsPageSizeByDefault(t *testing.T) {
 	}
 }
 
-func TestNew_SetsDefaultListenPortByDefault(t *testing.T) {
+func TestNew_SetsDefaultListenAddressByDefault(t *testing.T) {
 	t.Parallel()
-	want := morningpost.DefaultListenPort
+	want := morningpost.DefaultListenAddress
 	m := newMorningPostWithIODiscard(t)
-	got := m.ListenPort
+	got := m.ListenAddress
 	if want != got {
-		t.Fatalf("want DefaultListenPort %d, got %d", want, got)
+		t.Fatalf("want DefaultListenAddress %q, got %q", want, got)
 	}
 }
 
@@ -149,26 +147,6 @@ func TestNew_SetsHTTPTimeoutByDefault(t *testing.T) {
 	}
 }
 
-func TestNew_CreatesDirectoryGivenPathNotExist(t *testing.T) {
-	t.Parallel()
-	tempDir := t.TempDir()
-	fileStore := &morningpost.FileStore{
-		Data: map[uint64]morningpost.Feed{},
-		Path: tempDir + "/directory/bogus/file.db",
-	}
-	_ = newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
-	info, err := os.Stat(tempDir + "/directory/bogus")
-	if errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("want path %q to exist but it doesn't", tempDir+"/directory/bogus")
-	}
-	if !info.IsDir() {
-		t.Fatalf("want path %q to be a directory but it is not", tempDir+"/directory/bogus")
-	}
-	if info.Mode().Perm() != fs.FileMode(0755) {
-		t.Fatalf("want path %q permission %v, got %v", tempDir+"/directory/bogus", fs.FileMode(0755), info.Mode().Perm())
-	}
-}
-
 func TestFromArgs_ErrorsIfUnkownFlag(t *testing.T) {
 	t.Parallel()
 	args := []string{"-asdfaewrawers", "8080"}
@@ -182,10 +160,10 @@ func TestFromArgs_ErrorsIfUnkownFlag(t *testing.T) {
 	}
 }
 
-func TestFromArgs_pFlagSetListenPort(t *testing.T) {
+func TestFromArgs_pFlagSetListenAddress(t *testing.T) {
 	t.Parallel()
-	want := 8080
-	args := []string{"-p", "8080"}
+	want := ":8080"
+	args := []string{"-l", ":8080"}
 	m, err := morningpost.New(
 		morningpost.WithStdout(io.Discard),
 		morningpost.WithStderr(io.Discard),
@@ -194,15 +172,15 @@ func TestFromArgs_pFlagSetListenPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := m.ListenPort
+	got := m.ListenAddress
 	if want != got {
-		t.Errorf("wants -p flag to set listen port to %d, got %d", want, got)
+		t.Errorf("wants -l flag to set listen Address to %q, got %q", want, got)
 	}
 }
 
-func TestFromArgs_SetsListenPortByDefaultToDefaultListenPort(t *testing.T) {
+func TestFromArgs_SetsListenAddressByDefaultToDefaultListenAddress(t *testing.T) {
 	t.Parallel()
-	want := morningpost.DefaultListenPort
+	want := morningpost.DefaultListenAddress
 	m, err := morningpost.New(
 		morningpost.WithStdout(io.Discard),
 		morningpost.WithStderr(io.Discard),
@@ -211,9 +189,9 @@ func TestFromArgs_SetsListenPortByDefaultToDefaultListenPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := m.ListenPort
+	got := m.ListenAddress
 	if want != got {
-		t.Errorf("wants -p flag to set listen port to %d, got %d", want, got)
+		t.Errorf("wants default listen Address %q, got %q", want, got)
 	}
 }
 
@@ -355,7 +333,7 @@ func TestParseRDFResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	}
 }
 
-func TestHandleFeeds_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
+func TestHandleFeeds_RespondsMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
 	m := newMorningPostWithIODiscard(t)
@@ -375,7 +353,7 @@ func TestHandleFeeds_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testi
 	}
 }
 
-func TestHandleFeeds_AnswersStatusOKGivenRequestWithMethodHead(t *testing.T) {
+func TestHandleFeeds_RespondsStatusOKGivenRequestWithMethodHead(t *testing.T) {
 	t.Parallel()
 	m := newMorningPostWithIODiscard(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
@@ -409,7 +387,7 @@ func TestHandleFeeds_ReturnsExpectedStatusCodeGivenRequestWithMethodPostAndBody(
 	}
 }
 
-func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndNoBody(t *testing.T) {
+func TestHandleFeeds_RespondsBadRequestGivenRequestWithMethodPostAndNoBody(t *testing.T) {
 	t.Parallel()
 	want := http.StatusBadRequest
 	m := newMorningPostWithIODiscard(t)
@@ -425,7 +403,7 @@ func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndNoBody(t *tes
 	}
 }
 
-func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndBlankSpacesInBodyURL(t *testing.T) {
+func TestHandleFeeds_RespondsBadRequestGivenRequestWithMethodPostAndBlankSpacesInBodyURL(t *testing.T) {
 	t.Parallel()
 	want := http.StatusBadRequest
 	m := newMorningPostWithIODiscard(t)
@@ -481,7 +459,7 @@ func TestHandleFeeds_DeleteFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testin
 	}
 }
 
-func TestHandleHome_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
+func TestHandleHome_RespondsMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
 	m := newMorningPostWithIODiscard(t)
@@ -697,7 +675,7 @@ func TestParseAtomResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	}
 }
 
-func TestHandleHome_AnswersNotFoundForUnkownRoute(t *testing.T) {
+func TestHandleHome_RespondsNotFoundForUnkownRoute(t *testing.T) {
 	t.Parallel()
 	want := http.StatusNotFound
 	m := newMorningPostWithIODiscard(t)
@@ -1144,7 +1122,7 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	}
 }
 
-func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithUnexpectedMethod(t *testing.T) {
+func TestHandleNews_RespondsMethodNotAllowedGivenRequestWithUnexpectedMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
 	m := newMorningPostWithIODiscard(t)
@@ -1164,7 +1142,7 @@ func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithUnexpectedMethod(t *t
 	}
 }
 
-func TestRun_RespondsStatusOKGivenGETHome(t *testing.T) {
+func TestListenAndServe_RespondsStatusOKGivenGETHome(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
 	fileStore := &morningpost.FileStore{
@@ -1175,13 +1153,13 @@ func TestRun_RespondsStatusOKGivenGETHome(t *testing.T) {
 		morningpost.WithStderr(io.Discard),
 		morningpost.WithStdout(io.Discard),
 		morningpost.WithFileStore(fileStore),
-		morningpost.FromArgs([]string{"-p", "55000"}),
+		morningpost.FromArgs([]string{"-l", ":55000"}),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := errgroup.Group{}
-	g.Go(m.Run)
+	g.Go(m.ListenAndServe)
 	resp, err := http.Get("http://localhost:55000")
 	if err != nil {
 		t.Fatal(err)
@@ -1200,19 +1178,19 @@ func TestRun_RespondsStatusOKGivenGETHome(t *testing.T) {
 	}
 }
 
-func TestRun_RespondsStatusOKGivenGETFeeds(t *testing.T) {
+func TestListenAndServe_RespondsStatusOKGivenGETFeeds(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
 	m, err := morningpost.New(
 		morningpost.WithStderr(io.Discard),
 		morningpost.WithStdout(io.Discard),
-		morningpost.FromArgs([]string{"-p", "56000"}),
+		morningpost.FromArgs([]string{"-l", ":56000"}),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := errgroup.Group{}
-	g.Go(m.Run)
+	g.Go(m.ListenAndServe)
 	resp, err := http.Get("http://localhost:56000/feeds/")
 	if err != nil {
 		t.Fatal(err)
@@ -1231,19 +1209,19 @@ func TestRun_RespondsStatusOKGivenGETFeeds(t *testing.T) {
 	}
 }
 
-func TestRun_RespondsStatusOKGivenGETNews(t *testing.T) {
+func TestListenAndServe_RespondsStatusOKGivenGETNews(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
 	m, err := morningpost.New(
 		morningpost.WithStderr(io.Discard),
 		morningpost.WithStdout(io.Discard),
-		morningpost.FromArgs([]string{"-p", "57000"}),
+		morningpost.FromArgs([]string{"-l", ":57000"}),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := errgroup.Group{}
-	g.Go(m.Run)
+	g.Go(m.ListenAndServe)
 	resp, err := http.Get("http://localhost:57000/news/")
 	if err != nil {
 		t.Fatal(err)

@@ -26,7 +26,7 @@ func setup(t *testing.T) func(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go m.Run()
+	go m.ListenAndServe()
 	return func(t *testing.T) {
 		err := m.Shutdown()
 		if err != nil {

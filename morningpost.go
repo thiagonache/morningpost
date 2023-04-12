@@ -14,8 +14,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,12 +29,12 @@ import (
 var templates embed.FS
 
 const (
-	DefaultHTTPTimeout  = 30 * time.Second
-	DefaultListenPort   = 33000
-	DefaultNewsPageSize = 10
-	FeedTypeAtom        = "Atom"
-	FeedTypeRDF         = "RDF"
-	FeedTypeRSS         = "RSS"
+	DefaultHTTPTimeout   = 30 * time.Second
+	DefaultListenAddress = "127.0.0.1:33000"
+	DefaultNewsPageSize  = 10
+	FeedTypeAtom         = "Atom"
+	FeedTypeRDF          = "RDF"
+	FeedTypeRSS          = "RSS"
 )
 
 type News struct {
@@ -57,16 +55,16 @@ func NewNews(feed, title, URL string) (News, error) {
 }
 
 type MorningPost struct {
-	Client       *http.Client
-	ctx          context.Context
-	FileStore    *FileStore
-	ListenPort   int
-	NewsPageSize int
-	PageNews     []News
-	Server       *http.Server
-	Stderr       io.Writer
-	Stdout       io.Writer
-	stop         context.CancelFunc
+	Client        *http.Client
+	ctx           context.Context
+	FileStore     *FileStore
+	ListenAddress string
+	NewsPageSize  int
+	PageNews      []News
+	Server        *http.Server
+	Stderr        io.Writer
+	Stdout        io.Writer
+	stop          context.CancelFunc
 
 	mu   *sync.Mutex
 	News []News
@@ -282,20 +280,16 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (m *MorningPost) Run() error {
-	err := m.FileStore.Load()
-	if err != nil {
-		return err
-	}
+func (m *MorningPost) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", m.HandleHome)
 	mux.HandleFunc("/feeds/", m.HandleFeeds)
 	mux.HandleFunc("/news/", m.HandleNews)
 	m.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", m.ListenPort),
+		Addr:    m.ListenAddress,
 		Handler: mux,
 	}
-	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", fmt.Sprintf("127.0.0.1:%d", m.ListenPort))
+	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", m.ListenAddress)
 	return m.Server.ListenAndServe()
 }
 
@@ -316,21 +310,22 @@ func (m *MorningPost) WaitForExit() error {
 func New(opts ...Option) (*MorningPost, error) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	f, err := NewFileStore()
+	if err != nil {
+		return nil, err
+	}
 	m := &MorningPost{
 		Client: &http.Client{
 			Timeout: DefaultHTTPTimeout,
 		},
-		ctx: ctx,
-		FileStore: &FileStore{
-			Data: map[uint64]Feed{},
-			Path: userStateDir() + "/MorningPost/morningpost.db",
-		},
-		ListenPort:   DefaultListenPort,
-		mu:           &sync.Mutex{},
-		NewsPageSize: DefaultNewsPageSize,
-		Stderr:       os.Stderr,
-		Stdout:       os.Stdout,
-		stop:         stop,
+		ctx:           ctx,
+		FileStore:     f,
+		ListenAddress: DefaultListenAddress,
+		mu:            &sync.Mutex{},
+		NewsPageSize:  DefaultNewsPageSize,
+		Stderr:        os.Stderr,
+		Stdout:        os.Stdout,
+		stop:          stop,
 	}
 	for _, o := range opts {
 		err := o(m)
@@ -338,59 +333,35 @@ func New(opts ...Option) (*MorningPost, error) {
 			return nil, err
 		}
 	}
-	if _, err := os.Stat(path.Dir(m.FileStore.Path)); os.IsNotExist(err) {
-		err := os.MkdirAll(path.Dir(m.FileStore.Path), 0755)
-		if err != nil {
-			return nil, err
-		}
-	}
+
 	return m, nil
 }
 
-func getenv(key string) string {
-	v, _ := syscall.Getenv(key)
-	return v
-}
-
-func userStateDir() string {
-	switch runtime.GOOS {
-	case "windows":
-		dir := getenv("AppData")
-		if dir == "" {
-			return "./"
-		}
-		return dir
-	case "darwin", "ios":
-		dir := getenv("HOME")
-		if dir == "" {
-			return "./"
-		}
-		dir += "/Library/Application Support"
-		return dir
-	default: // Unix
-		dir := getenv("XDG_STATE_HOME")
-		if dir == "" {
-			return "/var/lib"
-		}
-		return dir
+func Run(args ...string) error {
+	m, err := New(
+		FromArgs(args),
+	)
+	if err != nil {
+		return err
 	}
+	err = m.FileStore.Load()
+	if err != nil {
+		return err
+	}
+	go m.ListenAndServe()
+	err = m.WaitForExit()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(m.Stdout, "Done. Thank you! <3")
+	return nil
 }
 
 func Main() int {
-	m, err := New(
-		FromArgs(os.Args[1:]),
-	)
-	if err != nil {
+	if err := Run(os.Args[:1]...); err != nil {
 		fmt.Println(err)
 		return 1
 	}
-	go m.Run()
-	err = m.WaitForExit()
-	if err != nil {
-		fmt.Fprintln(m.Stderr, err)
-		return 1
-	}
-	fmt.Fprintln(m.Stdout, "Done. Thank you! <3")
 	return 0
 }
 
@@ -609,12 +580,12 @@ func FromArgs(args []string) Option {
 	return func(m *MorningPost) error {
 		fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 		fs.SetOutput(m.Stderr)
-		listenPort := fs.Int("p", DefaultListenPort, "Listening port")
+		listenAdress := fs.String("l", DefaultListenAddress, "Listening address")
 		err := fs.Parse(args)
 		if err != nil {
 			return err
 		}
-		m.ListenPort = *listenPort
+		m.ListenAddress = *listenAdress
 		return nil
 	}
 }
