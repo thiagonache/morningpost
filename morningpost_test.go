@@ -317,7 +317,7 @@ func TestWithFileStore_SetsFileStorePathGivenCustomStore(t *testing.T) {
 		Path: tempdir + "data/store.db",
 	}
 	m := newMorningPostWithIODiscardAndGivenFileStore(t, fileStore)
-	got := m.FileStorePath()
+	got := m.FileStore.Path
 	if want != got {
 		t.Fatalf("want store path %q, got %q", want, got)
 	}
@@ -475,7 +475,7 @@ func TestHandleFeeds_DeleteFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testin
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected response status code %q", resp.Status)
 	}
-	got := m.FileStoreData()
+	got := m.FileStore.Data
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}

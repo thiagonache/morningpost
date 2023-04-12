@@ -59,7 +59,7 @@ func NewNews(feed, title, URL string) (News, error) {
 type MorningPost struct {
 	Client       *http.Client
 	ctx          context.Context
-	fileStore    *FileStore
+	FileStore    *FileStore
 	ListenPort   int
 	NewsPageSize int
 	PageNews     []News
@@ -76,7 +76,7 @@ func (m *MorningPost) GetNews() error {
 	m.EmptyNews()
 	defer m.RandomNews()
 	g := new(errgroup.Group)
-	for _, feed := range m.fileStore.GetAll() {
+	for _, feed := range m.FileStore.GetAll() {
 		feed := feed
 		g.Go(func() error {
 			news, err := feed.GetNews()
@@ -187,15 +187,15 @@ func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, feed := range feeds {
-			m.fileStore.Add(feed)
+			m.FileStore.Add(feed)
 		}
-		err = RenderHTMLTemplate(w, "templates/feeds.gohtml", m.fileStore.GetAll())
+		err = RenderHTMLTemplate(w, "templates/feeds.gohtml", m.FileStore.GetAll())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	case http.MethodGet:
-		err := RenderHTMLTemplate(w, "templates/feeds.gohtml", m.fileStore.GetAll())
+		err := RenderHTMLTemplate(w, "templates/feeds.gohtml", m.FileStore.GetAll())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -207,7 +207,7 @@ func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		m.fileStore.Delete(ui64)
+		m.FileStore.Delete(ui64)
 	default:
 		fmt.Fprintln(m.Stderr, "Method not allowed")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -283,7 +283,7 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *MorningPost) Run() error {
-	err := m.fileStore.Load()
+	err := m.FileStore.Load()
 	if err != nil {
 		return err
 	}
@@ -304,21 +304,13 @@ func (m *MorningPost) Shutdown() error {
 	if err != nil && err.Error() != context.Canceled.Error() {
 		fmt.Fprintf(m.Stderr, "Error running server shutdown: %+v", err)
 	}
-	return m.fileStore.Save()
+	return m.FileStore.Save()
 }
 
 func (m *MorningPost) WaitForExit() error {
 	<-m.ctx.Done()
 	fmt.Fprintln(m.Stdout, "Please WAIT! Do not repeat this action")
 	return m.Shutdown()
-}
-
-func (m *MorningPost) FileStorePath() string {
-	return m.fileStore.Path
-}
-
-func (m *MorningPost) FileStoreData() map[uint64]Feed {
-	return m.fileStore.Data
 }
 
 func New(opts ...Option) (*MorningPost, error) {
@@ -329,7 +321,7 @@ func New(opts ...Option) (*MorningPost, error) {
 			Timeout: DefaultHTTPTimeout,
 		},
 		ctx: ctx,
-		fileStore: &FileStore{
+		FileStore: &FileStore{
 			Data: map[uint64]Feed{},
 			Path: userStateDir() + "/MorningPost/morningpost.db",
 		},
@@ -346,8 +338,8 @@ func New(opts ...Option) (*MorningPost, error) {
 			return nil, err
 		}
 	}
-	if _, err := os.Stat(path.Dir(m.fileStore.Path)); os.IsNotExist(err) {
-		err := os.MkdirAll(path.Dir(m.fileStore.Path), 0755)
+	if _, err := os.Stat(path.Dir(m.FileStore.Path)); os.IsNotExist(err) {
+		err := os.MkdirAll(path.Dir(m.FileStore.Path), 0755)
 		if err != nil {
 			return nil, err
 		}
@@ -659,7 +651,7 @@ func WithClient(c *http.Client) Option {
 
 func WithFileStore(f *FileStore) Option {
 	return func(m *MorningPost) error {
-		m.fileStore = f
+		m.FileStore = f
 		return nil
 	}
 }
