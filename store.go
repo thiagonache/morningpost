@@ -6,9 +6,18 @@ import (
 	"hash/fnv"
 	"os"
 	"path"
+	"runtime"
+	"syscall"
 
 	"golang.org/x/exp/maps"
 )
+
+type Store interface {
+	GetAll() []Feed
+	Add(Feed)
+	Delete(uint64)
+	Save() error
+}
 
 type FileStore struct {
 	Data map[uint64]Feed
@@ -72,6 +81,35 @@ func NewFileStore(opts ...FileStoreOption) (*FileStore, error) {
 
 	}
 	return fileStore, nil
+}
+
+func getenv(key string) string {
+	v, _ := syscall.Getenv(key)
+	return v
+}
+
+func userStateDir() string {
+	switch runtime.GOOS {
+	case "windows":
+		dir := getenv("AppData")
+		if dir == "" {
+			return "./"
+		}
+		return dir
+	case "darwin", "ios":
+		dir := getenv("HOME")
+		if dir == "" {
+			return "./"
+		}
+		dir += "/Library/Application Support"
+		return dir
+	default: // Unix
+		dir := getenv("XDG_STATE_HOME")
+		if dir == "" {
+			return "/var/lib"
+		}
+		return dir
+	}
 }
 
 type FileStoreOption func(*FileStore)

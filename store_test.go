@@ -5,21 +5,12 @@ import (
 	"io/fs"
 	"os"
 	"runtime"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/thiagonache/morningpost"
 )
-
-func newFileStoreWithBogusPath(t *testing.T) *morningpost.FileStore {
-	fileStore, err := morningpost.NewFileStore(
-		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fileStore
-}
 
 func TestAdd_PopulatesStoreGivenFeed(t *testing.T) {
 	want := map[uint64]morningpost.Feed{
@@ -28,7 +19,12 @@ func TestAdd_PopulatesStoreGivenFeed(t *testing.T) {
 			ID:       11467468815701994079,
 		},
 	}
-	fileStore := newFileStoreWithBogusPath(t)
+	fileStore, err := morningpost.NewFileStore(
+		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fileStore.Add(morningpost.Feed{
 		Endpoint: "fake.url",
 	})
@@ -48,7 +44,12 @@ func TestGetAll_ReturnsProperItemsGivenPrePoluatedStore(t *testing.T) {
 			Endpoint: "https://fake-https.url",
 		},
 	}
-	fileStore := newFileStoreWithBogusPath(t)
+	fileStore, err := morningpost.NewFileStore(
+		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fileStore.Data = map[uint64]morningpost.Feed{
 		0: {
 			Endpoint: "http://fake-http.url",
@@ -58,6 +59,7 @@ func TestGetAll_ReturnsProperItemsGivenPrePoluatedStore(t *testing.T) {
 		},
 	}
 	got := fileStore.GetAll()
+	sort.Slice(got, func(i, j int) bool { return got[i].Endpoint < got[j].Endpoint })
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -66,8 +68,13 @@ func TestGetAll_ReturnsProperItemsGivenPrePoluatedStore(t *testing.T) {
 func TestLoad_ReturnsExpectedDataGivenEmptyFileStore(t *testing.T) {
 	t.Parallel()
 	want := map[uint64]morningpost.Feed{}
-	fileStore := newFileStoreWithBogusPath(t)
-	err := fileStore.Load()
+	fileStore, err := morningpost.NewFileStore(
+		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = fileStore.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +132,12 @@ func TestDelete_RemovesFeedFromStore(t *testing.T) {
 			Endpoint: "https://fake-https.url",
 		},
 	}
-	fileStore := newFileStoreWithBogusPath(t)
+	fileStore, err := morningpost.NewFileStore(
+		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fileStore.Data = map[uint64]morningpost.Feed{
 		0: {
 			Endpoint: "http://fake-http.url",

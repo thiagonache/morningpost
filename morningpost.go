@@ -10,11 +10,11 @@ import (
 	"html/template"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,12 +30,12 @@ import (
 var templates embed.FS
 
 const (
-	DefaultHTTPTimeout  = 30 * time.Second
-	DefaultListenPort   = 33000
-	DefaultNewsPageSize = 10
-	FeedTypeAtom        = "Atom"
-	FeedTypeRDF         = "RDF"
-	FeedTypeRSS         = "RSS"
+	DefaultHTTPTimeout   = 30 * time.Second
+	DefaultListenAddress = "127.0.0.1:33000"
+	DefaultNewsPageSize  = 10
+	FeedTypeAtom         = "Atom"
+	FeedTypeRDF          = "RDF"
+	FeedTypeRSS          = "RSS"
 )
 
 type News struct {
@@ -56,16 +56,16 @@ func NewNews(feed, title, URL string) (News, error) {
 }
 
 type MorningPost struct {
-	Client       *http.Client
-	ctx          context.Context
-	ListenPort   int
-	NewsPageSize int
-	PageNews     []News
-	Server       *http.Server
-	Stderr       io.Writer
-	Stdout       io.Writer
-	stop         context.CancelFunc
-	Store        *FileStore
+	Client        *http.Client
+	ctx           context.Context
+	ListenAddress string
+	NewsPageSize  int
+	PageNews      []News
+	Server        *http.Server
+	Stderr        io.Writer
+	Stdout        io.Writer
+	stop          context.CancelFunc
+	Store         Store
 
 	mu   *sync.Mutex
 	News []News
@@ -281,17 +281,26 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (m *MorningPost) Run() error {
+func (m *MorningPost) Serve(l net.Listener) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", m.HandleHome)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {})
 	mux.HandleFunc("/feeds/", m.HandleFeeds)
 	mux.HandleFunc("/news/", m.HandleNews)
+	mux.HandleFunc("/", m.HandleHome)
+	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", l.Addr().String())
 	m.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", m.ListenPort),
+		Addr:    l.Addr().String(),
 		Handler: mux,
 	}
-	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", fmt.Sprintf("127.0.0.1:%d", m.ListenPort))
-	return m.Server.ListenAndServe()
+	return m.Server.Serve(l)
+}
+
+func (m *MorningPost) ListenAndServe() error {
+	l, err := net.Listen("tcp", m.ListenAddress)
+	if err != nil {
+		return err
+	}
+	return m.Serve(l)
 }
 
 func (m *MorningPost) Shutdown() error {
@@ -308,21 +317,21 @@ func (m *MorningPost) WaitForExit() error {
 	return m.Shutdown()
 }
 
-func New(store *FileStore, opts ...Option) (*MorningPost, error) {
+func New(store Store, opts ...Option) (*MorningPost, error) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	m := &MorningPost{
 		Client: &http.Client{
 			Timeout: DefaultHTTPTimeout,
 		},
-		ctx:          ctx,
-		ListenPort:   DefaultListenPort,
-		mu:           &sync.Mutex{},
-		NewsPageSize: DefaultNewsPageSize,
-		Stderr:       os.Stderr,
-		Stdout:       os.Stdout,
-		Store:        store,
-		stop:         stop,
+		ctx:           ctx,
+		ListenAddress: DefaultListenAddress,
+		mu:            &sync.Mutex{},
+		NewsPageSize:  DefaultNewsPageSize,
+		Stderr:        os.Stderr,
+		Stdout:        os.Stdout,
+		Store:         store,
+		stop:          stop,
 	}
 	for _, o := range opts {
 		err := o(m)
@@ -333,55 +342,33 @@ func New(store *FileStore, opts ...Option) (*MorningPost, error) {
 	return m, nil
 }
 
-func getenv(key string) string {
-	v, _ := syscall.Getenv(key)
-	return v
-}
-
-func userStateDir() string {
-	switch runtime.GOOS {
-	case "windows":
-		dir := getenv("AppData")
-		if dir == "" {
-			return "./"
-		}
-		return dir
-	case "darwin", "ios":
-		dir := getenv("HOME")
-		if dir == "" {
-			return "./"
-		}
-		dir += "/Library/Application Support"
-		return dir
-	default: // Unix
-		dir := getenv("XDG_STATE_HOME")
-		if dir == "" {
-			return "/var/lib"
-		}
-		return dir
+func RunServer(stdout, stderr io.Writer, args ...string) error {
+	fileStore, err := NewFileStore()
+	if err != nil {
+		return err
 	}
+	m, err := New(fileStore,
+		WithStdout(stdout),
+		WithStderr(stderr),
+		FromArgs(args),
+	)
+	if err != nil {
+		return err
+	}
+	go m.ListenAndServe()
+	err = m.WaitForExit()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(m.Stdout, "Done. Thank you! <3")
+	return nil
 }
 
 func Main() int {
-	fileStore, err := NewFileStore()
-	if err != nil {
+	if err := RunServer(os.Stdout, os.Stderr, os.Args[1:]...); err != nil {
 		fmt.Println(err)
 		return 1
 	}
-	m, err := New(fileStore,
-		FromArgs(os.Args[1:]),
-	)
-	if err != nil {
-		fmt.Println(err)
-		return 1
-	}
-	go m.Run()
-	err = m.WaitForExit()
-	if err != nil {
-		fmt.Fprintln(m.Stderr, err)
-		return 1
-	}
-	fmt.Fprintln(m.Stdout, "Done. Thank you! <3")
 	return 0
 }
 
@@ -600,12 +587,12 @@ func FromArgs(args []string) Option {
 	return func(m *MorningPost) error {
 		fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 		fs.SetOutput(m.Stderr)
-		listenPort := fs.Int("p", DefaultListenPort, "Listening port")
+		listenAddress := fs.String("l", DefaultListenAddress, "Listening address")
 		err := fs.Parse(args)
 		if err != nil {
 			return err
 		}
-		m.ListenPort = *listenPort
+		m.ListenAddress = *listenAddress
 		return nil
 	}
 }

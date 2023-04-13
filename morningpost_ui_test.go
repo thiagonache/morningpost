@@ -4,25 +4,17 @@ package morningpost_test
 
 import (
 	"context"
-	"io"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/thiagonache/morningpost"
+	"golang.org/x/net/nettest"
 )
 
-func setup(t *testing.T) func(t *testing.T) {
-	m, err := morningpost.New(
-		newFileStoreWithBogusPath(t),
-		morningpost.WithStderr(io.Discard),
-		morningpost.WithStdout(io.Discard),
-		morningpost.FromArgs([]string{"-p", "58000"}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go m.Run()
+func setup(t *testing.T, l net.Listener) func(t *testing.T) {
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	go m.Serve(l)
 	return func(t *testing.T) {
 		err := m.Shutdown()
 		if err != nil {
@@ -44,7 +36,11 @@ func submitFeed(urlstr, sel, q string, res *string) chromedp.Tasks {
 
 func TestFeedPostForm(t *testing.T) {
 	t.Parallel()
-	teardown := setup(t)
+	l, err := nettest.NewLocalListener("tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	teardown := setup(t, l)
 	defer teardown(t)
 	want := "https://news.ycombinator.com/rss"
 	ctx, cancel := chromedp.NewContext(
@@ -55,7 +51,7 @@ func TestFeedPostForm(t *testing.T) {
 	ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var got string
-	err := chromedp.Run(ctx, submitFeed(`http://localhost:58000/feeds/`, `//input[@name="url"]`, `https://news.ycombinator.com/rss`, &got))
+	err = chromedp.Run(ctx, submitFeed(`http://`+l.Addr().String()+`/feeds/`, `//input[@name="url"]`, `https://news.ycombinator.com/rss`, &got))
 	if err != nil {
 		t.Fatal(err)
 	}
