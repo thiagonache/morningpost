@@ -10,25 +10,39 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/thiagonache/morningpost"
+	"golang.org/x/exp/maps"
 )
 
+type fakeStore map[uint64]morningpost.Feed
+
+func (f fakeStore) GetAll() []morningpost.Feed {
+	return maps.Values(f)
+}
+
+func (f fakeStore) Add(feed morningpost.Feed) {
+	f[0] = feed
+}
+
+func (f fakeStore) Delete(id uint64) {
+	delete(f, id)
+}
+
+func (f fakeStore) Save() error {
+	return nil
+}
+
+func (f fakeStore) Load() error {
+	return nil
+}
 func TestAdd_PopulatesStoreGivenFeed(t *testing.T) {
-	want := map[uint64]morningpost.Feed{
-		11467468815701994079: {
-			Endpoint: "fake.url",
-			ID:       11467468815701994079,
-		},
-	}
-	fileStore, err := morningpost.NewFileStore(
-		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fileStore.Add(morningpost.Feed{
+	want := []morningpost.Feed{{
+		Endpoint: "fake.url",
+	}}
+	store := fakeStore{}
+	store.Add(morningpost.Feed{
 		Endpoint: "fake.url",
 	})
-	got := fileStore.Data
+	got := store.GetAll()
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -38,47 +52,26 @@ func TestGetAll_ReturnsProperItemsGivenPrePoluatedStore(t *testing.T) {
 	t.Parallel()
 	want := []morningpost.Feed{
 		{
+			ID:       0,
 			Endpoint: "http://fake-http.url",
 		},
 		{
+			ID:       1,
 			Endpoint: "https://fake-https.url",
 		},
 	}
-	fileStore, err := morningpost.NewFileStore(
-		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fileStore.Data = map[uint64]morningpost.Feed{
-		0: {
+	store := fakeStore{
+		0: morningpost.Feed{
+			ID:       0,
 			Endpoint: "http://fake-http.url",
 		},
-		1: {
+		1: morningpost.Feed{
+			ID:       1,
 			Endpoint: "https://fake-https.url",
 		},
 	}
-	got := fileStore.GetAll()
+	got := store.GetAll()
 	sort.Slice(got, func(i, j int) bool { return got[i].Endpoint < got[j].Endpoint })
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
-	}
-}
-
-func TestLoad_ReturnsExpectedDataGivenEmptyFileStore(t *testing.T) {
-	t.Parallel()
-	want := map[uint64]morningpost.Feed{}
-	fileStore, err := morningpost.NewFileStore(
-		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = fileStore.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := fileStore.Data
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -86,40 +79,41 @@ func TestLoad_ReturnsExpectedDataGivenEmptyFileStore(t *testing.T) {
 
 func TestSave_PersistsDataToStore(t *testing.T) {
 	t.Parallel()
-	want := map[uint64]morningpost.Feed{
-		0: {
+	want := []morningpost.Feed{
+		{
+			ID:       3301497760025237570,
 			Endpoint: "http://fake-http.url",
 		},
-		1: {
+		{
+			ID:       9746313582359217228,
 			Endpoint: "https://fake-https.url",
 		},
 	}
 	tempDir := t.TempDir()
 	fileStore, err := morningpost.NewFileStore(
-		morningpost.WithFileStorePath(tempDir + "/bogus"),
+		morningpost.WithFileStorePath(tempDir + "/store.db"),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fileStore.Data = map[uint64]morningpost.Feed{
-		0: {
-			Endpoint: "http://fake-http.url",
-		},
-		1: {
-			Endpoint: "https://fake-https.url",
-		},
-	}
+	fileStore.Add(morningpost.Feed{
+		Endpoint: "http://fake-http.url",
+	})
+	fileStore.Add(morningpost.Feed{
+		Endpoint: "https://fake-https.url",
+	})
 	err = fileStore.Save()
 	if err != nil {
 		t.Fatal(err)
 	}
 	fileStore2, err := morningpost.NewFileStore(
-		morningpost.WithFileStorePath(tempDir + "/bogus"),
+		morningpost.WithFileStorePath(tempDir + "/store.db"),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := fileStore2.Data
+	got := fileStore2.GetAll()
+	sort.Slice(got, func(i, j int) bool { return got[i].Endpoint < got[j].Endpoint })
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -127,27 +121,24 @@ func TestSave_PersistsDataToStore(t *testing.T) {
 
 func TestDelete_RemovesFeedFromStore(t *testing.T) {
 	t.Parallel()
-	want := map[uint64]morningpost.Feed{
-		1: {
+	want := []morningpost.Feed{
+		{
+			ID:       1,
 			Endpoint: "https://fake-https.url",
 		},
 	}
-	fileStore, err := morningpost.NewFileStore(
-		morningpost.WithFileStorePath(t.TempDir() + "/bogus"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fileStore.Data = map[uint64]morningpost.Feed{
-		0: {
+	store := fakeStore{
+		0: morningpost.Feed{
+			ID:       0,
 			Endpoint: "http://fake-http.url",
 		},
-		1: {
+		1: morningpost.Feed{
+			ID:       1,
 			Endpoint: "https://fake-https.url",
 		},
 	}
-	fileStore.Delete(0)
-	got := fileStore.Data
+	store.Delete(0)
+	got := store.GetAll()
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -164,7 +155,7 @@ func TestNewFileStore_SetsDefaultPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := fileStore.Path
+	got := fileStore.Path()
 	if want != got {
 		t.Fatalf("want Path %q, got %q", want, got)
 	}
@@ -172,11 +163,11 @@ func TestNewFileStore_SetsDefaultPath(t *testing.T) {
 
 func TestNewFileStore_LoadsDataGivenPopulatedStore(t *testing.T) {
 	t.Parallel()
-	want := map[uint64]morningpost.Feed{
-		0: {
+	want := []morningpost.Feed{
+		{
 			Endpoint: "http://fake-http.url",
 		},
-		1: {
+		{
 			Endpoint: "https://fake-https.url",
 		},
 	}
@@ -186,7 +177,8 @@ func TestNewFileStore_LoadsDataGivenPopulatedStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := fileStore.Data
+	got := fileStore.GetAll()
+	sort.Slice(got, func(i, j int) bool { return got[i].Endpoint < got[j].Endpoint })
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -224,7 +216,7 @@ func TestWithFileStorePath_SetsPathGivenString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := fileStore.Path
+	got := fileStore.Path()
 	if want != got {
 		t.Fatalf("want Path %q, got %q", want, got)
 	}

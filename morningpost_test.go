@@ -16,27 +16,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/thiagonache/morningpost"
-	"golang.org/x/exp/maps"
 	"golang.org/x/net/nettest"
 )
-
-type fakeStore map[uint64]morningpost.Feed
-
-func (f fakeStore) GetAll() []morningpost.Feed {
-	return maps.Values(f)
-}
-
-func (f fakeStore) Add(feed morningpost.Feed) {
-	f[0] = feed
-}
-
-func (f fakeStore) Delete(id uint64) {
-	delete(f, id)
-}
-
-func (f fakeStore) Save() error {
-	return nil
-}
 
 func newServerWithContentTypeResponse(t *testing.T, contentType string) *httptest.Server {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
