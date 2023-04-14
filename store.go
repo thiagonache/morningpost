@@ -13,30 +13,30 @@ import (
 )
 
 type Store interface {
-	GetAll() []Feed
 	Add(Feed)
 	Delete(uint64)
+	GetAll() []Feed
 	Save() error
 }
 
 type FileStore struct {
-	Data map[uint64]Feed
-	Path string
+	data map[uint64]Feed
+	path string
 }
 
 func (f *FileStore) Add(feed Feed) {
 	h := fnv.New64a()
 	h.Write([]byte(feed.Endpoint))
 	feed.ID = h.Sum64()
-	f.Data[h.Sum64()] = feed
+	f.data[h.Sum64()] = feed
 }
 
 func (f *FileStore) GetAll() []Feed {
-	return maps.Values(f.Data)
+	return maps.Values(f.data)
 }
 
 func (f *FileStore) Load() error {
-	file, err := os.Open(f.Path)
+	file, err := os.Open(f.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -44,27 +44,31 @@ func (f *FileStore) Load() error {
 		return err
 	}
 	dec := gob.NewDecoder(file)
-	return dec.Decode(&f.Data)
+	return dec.Decode(&f.data)
 }
 
 func (f *FileStore) Save() error {
-	file, err := os.Create(f.Path)
+	file, err := os.Create(f.path)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 	enc := gob.NewEncoder(file)
-	return enc.Encode(f.Data)
+	return enc.Encode(f.data)
 }
 
 func (f *FileStore) Delete(id uint64) {
-	delete(f.Data, id)
+	delete(f.data, id)
+}
+
+func (f *FileStore) Path() string {
+	return f.path
 }
 
 func NewFileStore(opts ...FileStoreOption) (*FileStore, error) {
 	fileStore := &FileStore{
-		Data: map[uint64]Feed{},
-		Path: userStateDir() + "/MorningPost/morningpost.db",
+		data: map[uint64]Feed{},
+		path: userStateDir() + "/MorningPost/morningpost.db",
 	}
 	for _, o := range opts {
 		o(fileStore)
@@ -73,8 +77,8 @@ func NewFileStore(opts ...FileStoreOption) (*FileStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(path.Dir(fileStore.Path)); os.IsNotExist(err) {
-		err := os.MkdirAll(path.Dir(fileStore.Path), 0755)
+	if _, err := os.Stat(path.Dir(fileStore.path)); os.IsNotExist(err) {
+		err := os.MkdirAll(path.Dir(fileStore.path), 0755)
 		if err != nil {
 			return nil, err
 		}
@@ -116,6 +120,6 @@ type FileStoreOption func(*FileStore)
 
 func WithFileStorePath(path string) FileStoreOption {
 	return func(f *FileStore) {
-		f.Path = path
+		f.path = path
 	}
 }

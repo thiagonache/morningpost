@@ -85,7 +85,6 @@ func (m *MorningPost) GetNews() error {
 			m.AddNews(news)
 			return nil
 		})
-
 	}
 	return g.Wait()
 }
