@@ -31,9 +31,6 @@ func (f fakeStore) Save() error {
 	return nil
 }
 
-func (f fakeStore) Load() error {
-	return nil
-}
 func TestAdd_PopulatesStoreGivenFeed(t *testing.T) {
 	want := []morningpost.Feed{{
 		Endpoint: "fake.url",

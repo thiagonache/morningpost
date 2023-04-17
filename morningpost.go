@@ -30,12 +30,15 @@ import (
 var templates embed.FS
 
 const (
-	DefaultHTTPTimeout   = 30 * time.Second
-	DefaultListenAddress = "127.0.0.1:33000"
-	DefaultNewsPageSize  = 10
-	FeedTypeAtom         = "Atom"
-	FeedTypeRDF          = "RDF"
-	FeedTypeRSS          = "RSS"
+	DefaultHTTPTimeout        = 30 * time.Second
+	DefaultListenAddress      = "127.0.0.1:33000"
+	DefaultNewsPageSize       = 10
+	DefaultServerReadTimeout  = 2 * time.Second
+	DefaultServerWriteTimeout = 5 * time.Second
+	DefaultServerIdleTimeout  = 30 * time.Second
+	FeedTypeAtom              = "Atom"
+	FeedTypeRDF               = "RDF"
+	FeedTypeRSS               = "RSS"
 )
 
 type News struct {
@@ -283,13 +286,16 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 func (m *MorningPost) Serve(l net.Listener) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {})
+	mux.HandleFunc("/", m.HandleHome)
 	mux.HandleFunc("/feeds/", m.HandleFeeds)
 	mux.HandleFunc("/news/", m.HandleNews)
-	mux.HandleFunc("/", m.HandleHome)
 	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", l.Addr().String())
 	m.Server = &http.Server{
-		Addr:    l.Addr().String(),
-		Handler: mux,
+		Addr:         l.Addr().String(),
+		Handler:      mux,
+		IdleTimeout:  DefaultServerIdleTimeout,
+		ReadTimeout:  DefaultServerReadTimeout,
+		WriteTimeout: DefaultServerWriteTimeout,
 	}
 	return m.Server.Serve(l)
 }
@@ -299,12 +305,13 @@ func (m *MorningPost) ListenAndServe() error {
 	if err != nil {
 		return err
 	}
+	go m.WaitForExit()
 	return m.Serve(l)
 }
 
 func (m *MorningPost) Shutdown() error {
 	err := m.Server.Shutdown(m.ctx)
-	if err != nil && err.Error() != context.Canceled.Error() {
+	if err != nil {
 		fmt.Fprintf(m.Stderr, "Error running server shutdown: %+v", err)
 	}
 	return m.Store.Save()
@@ -354,9 +361,10 @@ func RunServer(stdout, stderr io.Writer, args ...string) error {
 	if err != nil {
 		return err
 	}
-	go m.ListenAndServe()
-	err = m.WaitForExit()
-	if err != nil {
+	g := errgroup.Group{}
+	g.Go(m.ListenAndServe)
+	err = g.Wait()
+	if err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	fmt.Fprintln(m.Stdout, "Done. Thank you! <3")

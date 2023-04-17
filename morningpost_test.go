@@ -92,7 +92,7 @@ func waitServerHealthCheck(t *testing.T, listenAddress string) {
 		}
 		return
 	}
-	t.Fatalf("%q not responding to GET", listenAddress)
+	t.Fatalf("%q not responding to GET", "http://"+listenAddress+"/healthz")
 }
 
 func TestNew_SetsDefaultNewsPageSizeByDefault(t *testing.T) {
@@ -101,7 +101,7 @@ func TestNew_SetsDefaultNewsPageSizeByDefault(t *testing.T) {
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
 	got := m.NewsPageSize
 	if want != got {
-		t.Fatalf("want ShowMaxNews %d but got %d", want, got)
+		t.Fatalf("want default news page size %d, got %d", want, got)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestNew_SetsDefaultListenAddressByDefault(t *testing.T) {
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
 	got := m.ListenAddress
 	if want != got {
-		t.Fatalf("want DefaultListenAddress %q, got %q", want, got)
+		t.Fatalf("want default listen address %q, got %q", want, got)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestFromArgs_ErrorsIfUnkownFlag(t *testing.T) {
 	}
 }
 
-func TestFromArgs_pFlagSetListenPort(t *testing.T) {
+func TestFromArgs_lFlagSetsListenPort(t *testing.T) {
 	t.Parallel()
 	want := "0.0.0.0:8080"
 	args := []string{"-l", "0.0.0.0:8080"}
@@ -187,7 +187,7 @@ func TestFromArgs_pFlagSetListenPort(t *testing.T) {
 	}
 }
 
-func TestFromArgs_SetsListenPortByDefaultToDefaultListenPort(t *testing.T) {
+func TestFromArgs_SetsListenAddressByDefaultToDefaultListenAddress(t *testing.T) {
 	t.Parallel()
 	want := morningpost.DefaultListenAddress
 	m, err := morningpost.New(
@@ -495,7 +495,7 @@ func TestHandleFeeds_DeletesFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testi
 func TestHandleFeeds_AddsFeedGivenPostRequest(t *testing.T) {
 	t.Parallel()
 	epTs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("content-type", "application/rss+xml")
+		w.Header().Set("content-type", "application/rss+xml")
 		fmt.Fprint(w, "<rss></rss>")
 	}))
 	want := []morningpost.Feed{
@@ -1085,7 +1085,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenHTMLPageWithFeedInRelativeLinkFormat
 	}
 }
 
-func TestFeedFinds_SetsHeadersOnHTTPRequest(t *testing.T) {
+func TestFindFeeds_SetsHeadersOnHTTPRequest(t *testing.T) {
 	t.Parallel()
 	wantHeaders := map[string]string{
 		"user-agent": "MorningPost/0.1",
@@ -1424,21 +1424,82 @@ func TestServe_ReturnsExpectedBodyOnNewsGivenEmptyStore(t *testing.T) {
 	}
 }
 
-// func TestRunServer_ServeHTTPRequests(t *testing.T) {
-// 	t.Parallel()
-// 	want := http.StatusOK
-// 	go morningpost.RunServer(io.Discard, io.Discard, []string{"-l", ":38000"}...)
-// 	for x := 0; x < 10; x++ {
-// 		resp, err := http.Get("http://127.0.0.1:38000")
-// 		if err != nil {
-// 			time.Sleep(300 * time.Millisecond)
-// 			continue
-// 		}
-// 		if resp.StatusCode != want {
-// 			time.Sleep(300 * time.Millisecond)
-// 			continue
-// 		}
-// 		return
-// 	}
-// 	t.Fatal("server at http://127.0.0.1:38000 is not responding to GET /")
-// }
+func TestRunServer_ServeHTTPRequests(t *testing.T) {
+	t.Parallel()
+	go morningpost.RunServer(io.Discard, io.Discard, []string{"-l", ":34000"}...)
+	waitServerHealthCheck(t, "127.0.0.1:34000")
+}
+
+func TestShutdown_ShutsServerDownGracefully(t *testing.T) {
+	t.Parallel()
+	l, err := nettest.NewLocalListener("tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	go m.Serve(l)
+	waitServerHealthCheck(t, l.Addr().String())
+	err = m.Shutdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServe_SetsDefaultServerReadTimeout(t *testing.T) {
+	t.Parallel()
+	want := morningpost.DefaultServerReadTimeout
+	l, err := nettest.NewLocalListener("tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	go m.Serve(l)
+	waitServerHealthCheck(t, l.Addr().String())
+	got := m.Server.ReadTimeout
+	if want != got {
+		t.Fatalf("want server read timeout %v, got %v", want, got)
+	}
+}
+
+func TestServe_SetsDefaultServerWriteTimeout(t *testing.T) {
+	t.Parallel()
+	want := morningpost.DefaultServerWriteTimeout
+	l, err := nettest.NewLocalListener("tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	go m.Serve(l)
+	waitServerHealthCheck(t, l.Addr().String())
+	got := m.Server.WriteTimeout
+	if want != got {
+		t.Fatalf("want server write timeout %v, got %v", want, got)
+	}
+}
+
+func TestServe_SetsDefaultServerIdleTimeout(t *testing.T) {
+	t.Parallel()
+	want := morningpost.DefaultServerIdleTimeout
+	l, err := nettest.NewLocalListener("tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	go m.Serve(l)
+	waitServerHealthCheck(t, l.Addr().String())
+	got := m.Server.IdleTimeout
+	if want != got {
+		t.Fatalf("want server idle timeout %v, got %v", want, got)
+	}
+}
+
+func TestListenAndServe_ErrorsGivenListenerAlreadyInUse(t *testing.T) {
+	t.Parallel()
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	go m.ListenAndServe()
+	waitServerHealthCheck(t, "localhost:33000")
+	err := m.ListenAndServe()
+	if err == nil {
+		t.Fatal("want error but got nil")
+	}
+}
