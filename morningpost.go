@@ -61,7 +61,6 @@ type MorningPost struct {
 	ListenAddress string
 	NewsPageSize  int
 	PageNews      []News
-	Server        *http.Server
 	Stderr        io.Writer
 	Stdout        io.Writer
 	stop          context.CancelFunc
@@ -287,11 +286,11 @@ func (m *MorningPost) Serve(l net.Listener) error {
 	mux.HandleFunc("/news/", m.HandleNews)
 	mux.HandleFunc("/", m.HandleHome)
 	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", l.Addr().String())
-	m.Server = &http.Server{
+	srv := &http.Server{
 		Addr:    l.Addr().String(),
 		Handler: mux,
 	}
-	return m.Server.Serve(l)
+	return srv.Serve(l)
 }
 
 func (m *MorningPost) ListenAndServe() error {
@@ -303,10 +302,6 @@ func (m *MorningPost) ListenAndServe() error {
 }
 
 func (m *MorningPost) Shutdown() error {
-	err := m.Server.Shutdown(m.ctx)
-	if err != nil && err.Error() != context.Canceled.Error() {
-		fmt.Fprintf(m.Stderr, "Error running server shutdown: %+v", err)
-	}
 	return m.Store.Save()
 }
 
