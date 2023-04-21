@@ -1424,21 +1424,40 @@ func TestServe_ReturnsExpectedBodyOnNewsGivenEmptyStore(t *testing.T) {
 	}
 }
 
-// func TestRunServer_ServeHTTPRequests(t *testing.T) {
-// 	t.Parallel()
-// 	want := http.StatusOK
-// 	go morningpost.RunServer(io.Discard, io.Discard, []string{"-l", ":38000"}...)
-// 	for x := 0; x < 10; x++ {
-// 		resp, err := http.Get("http://127.0.0.1:38000")
-// 		if err != nil {
-// 			time.Sleep(300 * time.Millisecond)
-// 			continue
-// 		}
-// 		if resp.StatusCode != want {
-// 			time.Sleep(300 * time.Millisecond)
-// 			continue
-// 		}
-// 		return
-// 	}
-// 	t.Fatal("server at http://127.0.0.1:38000 is not responding to GET /")
-// }
+func TestShutdown_PersistsStoreData(t *testing.T) {
+	t.Parallel()
+	want := []morningpost.Feed{
+		{
+			Endpoint: "http://fake.url",
+			ID:       13785422203466457797,
+		},
+	}
+	tempPath := t.TempDir() + "/store.db"
+	fileStore, err := morningpost.NewFileStore(
+		morningpost.WithFileStorePath(tempPath),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileStore.Add(morningpost.Feed{
+		Endpoint: "http://fake.url",
+	})
+	m, err := morningpost.New(fileStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = m.Shutdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileStore2, err := morningpost.NewFileStore(
+		morningpost.WithFileStorePath(tempPath),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fileStore2.GetAll()
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
