@@ -13,7 +13,7 @@ import (
 )
 
 type Store interface {
-	Add(Feed)
+	Add(...Feed)
 	Delete(uint64)
 	GetAll() []Feed
 	Save() error
@@ -24,11 +24,14 @@ type FileStore struct {
 	path string
 }
 
-func (f *FileStore) Add(feed Feed) {
+func (f *FileStore) Add(feeds ...Feed) {
 	h := fnv.New64a()
-	h.Write([]byte(feed.Endpoint))
-	feed.ID = h.Sum64()
-	f.data[h.Sum64()] = feed
+	for _, feed := range feeds {
+		h.Write([]byte(feed.Endpoint))
+		feed.ID = h.Sum64()
+		f.data[h.Sum64()] = feed
+		h.Reset()
+	}
 }
 
 func (f *FileStore) GetAll() []Feed {

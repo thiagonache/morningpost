@@ -128,40 +128,40 @@ func (m *MorningPost) ReadFeedIDFromURI(uri string) string {
 	return urlParts[len(urlParts)-1]
 }
 
-func (m *MorningPost) FindFeeds(URL string) ([]Feed, error) {
+func (m *MorningPost) FindFeeds(URL string) []Feed {
 	req, err := http.NewRequest(http.MethodGet, URL, nil)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 	req.Header.Set("user-agent", "MorningPost/0.1")
 	req.Header.Set("accept", "*/*")
 	resp, err := m.Client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected response status code %q", resp.Status)
+		return nil
 	}
 	contentType := parseContentType(resp.Header)
 	switch contentType {
 	case "application/rss+xml", "application/atom+xml", "text/xml", "application/xml":
 		feedType, err := ParseFeedType(resp.Body)
 		if err != nil {
-			return nil, err
+			return nil
 		}
 		return []Feed{{
 			Endpoint: URL,
 			Type:     feedType,
-		}}, nil
+		}}
 	case "text/html":
 		feeds, err := ParseLinkTags(resp.Body, URL)
 		if err != nil {
-			return nil, err
+			return nil
 		}
-		return feeds, nil
+		return feeds
 	default:
-		return nil, fmt.Errorf("unexpected content type: %q", contentType)
+		return nil
 	}
 }
 
@@ -177,15 +177,8 @@ func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		feeds, err := m.FindFeeds(URL)
-		if err != nil {
-			fmt.Fprintln(m.Stderr, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		for _, feed := range feeds {
-			m.Store.Add(feed)
-		}
+		feeds := m.FindFeeds(URL)
+		m.Store.Add(feeds...)
 		err = RenderHTMLTemplate(w, "templates/feeds.gohtml", m.Store.GetAll())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
