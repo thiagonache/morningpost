@@ -907,38 +907,6 @@ func TestParseFeedType_ErrorsGivenUnexpectedTag(t *testing.T) {
 	}
 }
 
-func TestFindFeeds_ErrorsIfStatusCodeIsNotStatusOK(t *testing.T) {
-	t.Parallel()
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusTeapot)
-	}))
-	defer ts.Close()
-	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	_, err := m.FindFeeds(ts.URL)
-	if err == nil {
-		t.Fatal("want error but got nil")
-	}
-}
-
-func TestFindFeeds_ErrorsGivenURLWithSchemeBogus(t *testing.T) {
-	t.Parallel()
-	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	_, err := m.FindFeeds("bogus://")
-	if err == nil {
-		t.Fatal("want error but got nil")
-	}
-}
-
-func TestFindFeeds_ErrorsGivenUnexpectedContentType(t *testing.T) {
-	t.Parallel()
-	ts := newServerWithContentTypeResponse(t, "bogus")
-	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	_, err := m.FindFeeds(ts.URL)
-	if err == nil {
-		t.Fatal("want error but got nil")
-	}
-}
-
 func TestFindFeeds_ReturnsExpectedFeedsGivenApplicationRSSXMLContentType(t *testing.T) {
 	t.Parallel()
 	ts := newServerWithContentTypeAndBodyResponse(t, "application/rss+xml", "testdata/rss.xml")
@@ -947,10 +915,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenApplicationRSSXMLContentType(t *test
 		Type:     morningpost.FeedTypeRSS,
 	}}
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	got, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := m.FindFeeds(ts.URL)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -964,10 +929,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenApplicationXMLContentTypeAndRSSData(
 		Type:     morningpost.FeedTypeRSS,
 	}}
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	got, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := m.FindFeeds(ts.URL)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -981,10 +943,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenTextXMLContentTypeAndRSSData(t *test
 		Type:     morningpost.FeedTypeRSS,
 	}}
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	got, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := m.FindFeeds(ts.URL)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -998,10 +957,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenTextXMLContentTypeAndRDFData(t *test
 		Type:     morningpost.FeedTypeRDF,
 	}}
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	got, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := m.FindFeeds(ts.URL)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -1015,10 +971,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenAtomApplicationContentType(t *testin
 		Type:     "Atom",
 	}}
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	got, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := m.FindFeeds(ts.URL)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -1048,10 +1001,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenHTMLPageWithFeedsInFullLinkFormat(t 
 	}))
 	defer ts.Close()
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	got, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := m.FindFeeds(ts.URL)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -1076,10 +1026,7 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenHTMLPageWithFeedInRelativeLinkFormat
 		},
 	}
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	got, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := m.FindFeeds(ts.URL)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
@@ -1103,10 +1050,7 @@ func TestFeedFinds_SetsHeadersOnHTTPRequest(t *testing.T) {
 	}))
 	defer ts.Close()
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	_, err := m.FindFeeds(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m.FindFeeds(ts.URL)
 }
 
 func TestNewNews_ErrorsGiven(t *testing.T) {

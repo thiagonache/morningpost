@@ -19,8 +19,10 @@ func (f fakeStore) GetAll() []morningpost.Feed {
 	return maps.Values(f)
 }
 
-func (f fakeStore) Add(feed morningpost.Feed) {
-	f[0] = feed
+func (f fakeStore) Add(feeds ...morningpost.Feed) {
+	for i, feed := range feeds {
+		f[uint64(i)] = feed
+	}
 }
 
 func (f fakeStore) Delete(id uint64) {
