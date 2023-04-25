@@ -35,6 +35,14 @@
       integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65"
       crossorigin="anonymous"
     />
+    <style>
+      tr.htmx-swapping th,
+      tr.htmx-swapping td {
+        -webkit-transition: opacity 1s ease-out;
+        transition: opacity 1s ease-out;
+        opacity: 0;
+      }
+    </style>
   </head>
   <body>
     <div class="container">
