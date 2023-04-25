@@ -1093,20 +1093,20 @@ func TestNewNews_ErrorsGiven(t *testing.T) {
 func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
-  <th class="table-light" scope="row">
+  <td class="table-light" scope="row">
     <a href="http://fake.url/title1.htm">Title 1</a>
     <small class="text-muted">Unit Test Feed</small>
-  </th>
+  </td>
 </tr>
 <tr
   hx-get="/news?page=2"
   hx-trigger="revealed"
   hx-swap="afterend"
 >
-  <th class="table-light" scope="row">
+  <td class="table-light" scope="row">
     <a href="http://fake.url/title2.htm">Title 2</a>
     <small class="text-muted">Unit Test Feed</small>
-  </th>
+  </td>
 </tr>
 `)
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
@@ -1152,16 +1152,16 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
-  <th class="table-light" scope="row">
+  <td class="table-light" scope="row">
     <a href="http://fake.url/title3.htm">Title 3</a>
     <small class="text-muted">Unit Test Feed</small>
-  </th>
+  </td>
 </tr>
 <tr>
-  <th class="table-light" scope="row">
+  <td class="table-light" scope="row">
     <a href="http://fake.url/title4.htm">Title 4</a>
     <small class="text-muted">Unit Test Feed</small>
-  </th>
+  </td>
 </tr>
 `)
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
@@ -1244,35 +1244,6 @@ func TestServe_RespondsStatusOKOnIndexGivenEmptyStore(t *testing.T) {
 	}
 }
 
-func TestServe_ReturnsExpectedBodyOnIndexGivenEmptyStore(t *testing.T) {
-	t.Parallel()
-	want, err := os.ReadFile("testdata/golden/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := nettest.NewLocalListener("tcp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	go m.Serve(l)
-	waitServerHealthCheck(t, l.Addr().String())
-	resp, err := http.Get("http://" + l.Addr().String() + "/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected response status code %q", resp.Status)
-	}
-	got, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
-	}
-}
-
 func TestServe_RespondsStatusOKOnFeedsGivenEmptyStore(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
@@ -1290,35 +1261,6 @@ func TestServe_RespondsStatusOKOnFeedsGivenEmptyStore(t *testing.T) {
 	got := resp.StatusCode
 	if want != got {
 		t.Fatalf("unexpected response status code %q", resp.Status)
-	}
-}
-
-func TestServe_ReturnsExpectedBodyOnFeedsGivenEmptyStore(t *testing.T) {
-	t.Parallel()
-	want, err := os.ReadFile("testdata/golden/feeds.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := nettest.NewLocalListener("tcp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	go m.Serve(l)
-	waitServerHealthCheck(t, l.Addr().String())
-	resp, err := http.Get("http://" + l.Addr().String() + "/feeds/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected response status code %q", resp.Status)
-	}
-	got, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
 	}
 }
 

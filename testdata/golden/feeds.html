@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -18,68 +17,75 @@
         transition: opacity 1s ease-out;
         opacity: 0;
       }
+      td a:visited {
+        color: black;
+      }
     </style>
   </head>
   <body>
-    
-<div class="container">
-  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-    <div class="container-fluid">
-      <a class="navbar-brand mb-0 h1">MorningPost</a>
-      <button
-        class="navbar-toggler"
-        type="button"
-        data-bs-toggle="collapse"
-        data-bs-target="#navbarNavAltMarkup"
-        aria-controls="navbarNavAltMarkup"
-        aria-expanded="false"
-        aria-label="Toggle navigation"
-      >
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
-        <div class="navbar-nav">
-          <a class="nav-link" href="/">News</a>
-          <a class="nav-link active" aria-current="page" href="/feeds">Feeds</a>
+    <div class="container">
+      <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+          <a class="navbar-brand mb-0 h1">MorningPost</a>
+          <button
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#navbarNavAltMarkup"
+            aria-controls="navbarNavAltMarkup"
+            aria-expanded="false"
+            aria-label="Toggle navigation"
+          >
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
+            <div class="navbar-nav">
+              <a class="nav-link" href="/">News</a>
+              <a class="nav-link active" aria-current="page" href="/feeds"
+                >Feeds</a
+              >
+            </div>
+          </div>
         </div>
+      </nav>
+      <hr />
+    </div>
+    <div class="container">
+      <form method="post" action="/feeds">
+        <div class="mb-3">
+          <label for="InputURL" class="form-label">URL</label>
+          <input
+            aria-describedby="URLHelp"
+            class="form-control"
+            id="InputURL"
+            name="url"
+            pattern="https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)"
+            placeholder="https://news.ycombinator.com/rss"
+            required
+            title="URL must contain http or https scheme and a valid domain name"
+            type="text"
+          />
+          <div id="URLHelp" class="form-text">
+            If you type only the site URL we'll try to find out the RSS feed URL
+            for you.
+          </div>
+        </div>
+        <button
+          id="button-create"
+          hx-post="/feeds/"
+          hx-target="body"
+          class="btn btn-primary"
+        >
+          Create
+        </button>
+      </form>
+      <hr />
+    </div>
+    <div class="container">
+      <div class="alert alert-warning" role="alert">
+        No Feeds found! Please, add one.
       </div>
     </div>
-  </nav>
-  <hr />
-</div>
-<div class="container">
-  <form method="post" action="/feeds">
-    <div class="mb-3">
-      <label for="InputURL" class="form-label">URL</label>
-      <input
-        aria-describedby="URLHelp"
-        class="form-control"
-        id="InputURL"
-        name="url"
-        pattern="https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)"
-        placeholder="https://news.ycombinator.com/rss"
-        required
-        title="URL must contain http or https scheme and a valid domain name"
-        type="text"
-      />
-      <div id="URLHelp" class="form-text">
-        If you type only the site URL we'll try to find out the RSS feed URL for
-        you.
-      </div>
-    </div>
-    <button id="button-create" hx-post="/feeds/" hx-target="body" class="btn btn-primary">
-      Create
-    </button>
-  </form>
-  <hr />
-</div>
-<div class="container">
-  
-  <div class="alert alert-warning" role="alert">
-    No Feeds found! Please, add one.
-  </div>
-  
-</div>
 
     <script
       src="https://unpkg.com/htmx.org@1.8.6"
