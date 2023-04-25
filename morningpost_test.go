@@ -451,7 +451,7 @@ func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndBlankSpacesIn
 	}
 }
 
-func TestHandleFeeds_DeletesFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testing.T) {
+func TestHandleFeedsDelete_DeletesFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testing.T) {
 	t.Parallel()
 	want := []morningpost.Feed{
 		{Endpoint: "https://fake-https.url"},
@@ -473,7 +473,7 @@ func TestHandleFeeds_DeletesFeedGivenDeleteReqiuestAndPrePopulatedStore(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeedsDelete))
 	defer ts.Close()
 	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/0", nil)
 	if err != nil {
@@ -1094,7 +1094,7 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title1.htm">Title 1</a>
+    <a href="http://fake.url/title1.htm" target="_blank">Title 1</a>
     <small class="text-muted">Unit Test Feed</small>
   </td>
 </tr>
@@ -1104,7 +1104,7 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
   hx-swap="afterend"
 >
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title2.htm">Title 2</a>
+    <a href="http://fake.url/title2.htm" target="_blank">Title 2</a>
     <small class="text-muted">Unit Test Feed</small>
   </td>
 </tr>
@@ -1153,13 +1153,13 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	t.Parallel()
 	want := []byte(`<tr>
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title3.htm">Title 3</a>
+    <a href="http://fake.url/title3.htm" target="_blank">Title 3</a>
     <small class="text-muted">Unit Test Feed</small>
   </td>
 </tr>
 <tr>
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title4.htm">Title 4</a>
+    <a href="http://fake.url/title4.htm" target="_blank">Title 4</a>
     <small class="text-muted">Unit Test Feed</small>
   </td>
 </tr>
@@ -1254,7 +1254,7 @@ func TestServe_RespondsStatusOKOnFeedsGivenEmptyStore(t *testing.T) {
 	}
 	go m.Serve(l)
 	waitServerHealthCheck(t, l.Addr().String())
-	resp, err := http.Get("http://" + l.Addr().String() + "/feeds/")
+	resp, err := http.Get("http://" + l.Addr().String() + "/feeds")
 	if err != nil {
 		t.Fatal(err)
 	}

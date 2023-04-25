@@ -26,7 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-//go:embed templates/*.gohtml
+//go:embed templates/*.gohtml templates/v2/*.gohtml templates/v2/partials/*.gohtml
 var templates embed.FS
 
 const (
@@ -165,45 +165,6 @@ func (m *MorningPost) FindFeeds(URL string) []Feed {
 	}
 }
 
-func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(m.Stdout, r.Method, r.URL)
-	switch r.Method {
-	case http.MethodHead:
-		w.WriteHeader(http.StatusOK)
-	case http.MethodPost:
-		URL, err := m.ReadURLFromForm(r)
-		if err != nil {
-			fmt.Fprintln(m.Stderr, err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		feeds := m.FindFeeds(URL)
-		m.Store.Add(feeds...)
-		err = RenderHTMLTemplate(w, "templates/feeds.gohtml", m.Store.GetAll())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	case http.MethodGet:
-		err := RenderHTMLTemplate(w, "templates/feeds.gohtml", m.Store.GetAll())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	case http.MethodDelete:
-		id := m.ReadFeedIDFromURI(r.URL.Path)
-		ui64, err := strconv.ParseUint(id, 10, 64)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		m.Store.Delete(ui64)
-	default:
-		fmt.Fprintln(m.Stderr, "Method not allowed")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func (m *MorningPost) HandleHome(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(m.Stdout, r.Method, r.URL)
 	if r.RequestURI != "/" {
@@ -272,11 +233,64 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (m *MorningPost) HandleFeedsDelete(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodDelete:
+		id := m.ReadFeedIDFromURI(r.URL.Path)
+		ui64, err := strconv.ParseUint(id, 10, 64)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		m.Store.Delete(ui64)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodHead:
+	case http.MethodGet:
+		tpl := template.Must(template.ParseFS(templates, "templates/v2/feeds.gohtml"))
+		err := tpl.Execute(w, m.Store.GetAll())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	case http.MethodPost:
+		URL, err := m.ReadURLFromForm(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		feeds := m.FindFeeds(URL)
+		m.Store.Add(feeds...)
+		w.Header().Set("HX-Trigger", "newFeed")
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (m *MorningPost) HandleFeedsTableRows(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		tpl := template.Must(template.ParseFS(templates, "templates/v2/partials/feeds-table-rows.gohtml"))
+		err := tpl.Execute(w, m.Store.GetAll())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (m *MorningPost) Serve(l net.Listener) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {})
-	mux.HandleFunc("/feeds/", m.HandleFeeds)
 	mux.HandleFunc("/news/", m.HandleNews)
+	mux.HandleFunc("/feeds/table-rows", m.HandleFeedsTableRows)
+	mux.HandleFunc("/feeds/", m.HandleFeedsDelete)
+	mux.HandleFunc("/feeds", m.HandleFeeds)
 	mux.HandleFunc("/", m.HandleHome)
 	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", l.Addr().String())
 	srv := &http.Server{
