@@ -4,6 +4,40 @@ It's nice to have something interesting to read with your morning coffee. My tas
 
 ![Demo Video](https://thiagocarvalho-public-assets.s3.us-west-2.amazonaws.com/morningpost-videos/demo.gif)
 
+## Skills demonstrated
+
+### Go Backend developer
+
+- [x] Concurrency
+- [x] Web API
+- [x] Web Client
+- [x] Functional Programming
+- [x] Interfaces
+- [x] Simple Store
+- [x] Crawler
+- [ ] SQL Database adapter
+- [ ] NoSQL Database adapter
+- [ ] AI recommendation system integration
+
+### Go Frontend developer
+
+- [x] [HTMX](https://htmx.org)
+- [x] HTML
+- [x] CSS
+- [x] AJAX
+- [x] Server side templating
+
+### CICD
+
+- [x] Auto release
+- [x] Unit tests
+- [ ] Integration tests
+- [ ] End to End tests
+- [x] UI tests
+- [ ] Build container image
+- [x] Code dependencies vulnerability check
+- [ ] Deploy solution on two cloud providers
+
 ## Getting started
 
 ### Install binary
@@ -29,25 +63,3 @@ $ morningpost
 ## Documentation
 
 Visit our [documentation page](doc/README.md)
-
-## RoadMap
-
-- [x] ~~CLI~~
-- [x] Add Feed type `RSS`
-- [x] Web UI
-- [x] Add Feed type `Atom`
-- [x] Add Feed type `RDF`
-- [x] Add Feed by `Auto-Discovery`
-- [x] Implement HTMX
-- [x] Delete Feed
-- [x] Infinite scroll for News
-- [ ] Add `custom` Feed via Go `interface`
-- [ ] Decouple store
-- [ ] Improve test coverage
-- [ ] Recommend new Feeds based on feeds already added
-- [ ] Recommend news based on previous News read
-- [ ] Do Auto-Discovery via [HTMX Active Search](https://htmx.org/examples/active-search/)
-
-## Acknowledgements
-
-Many thanks to [Josh Akeman](https://github.com/joshakeman) for suggesting this project.

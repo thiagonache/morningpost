@@ -51,7 +51,7 @@ func TestFeedPostForm(t *testing.T) {
 	ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var got string
-	err = chromedp.Run(ctx, submitFeed(`http://`+l.Addr().String()+`/feeds/`, `//input[@name="url"]`, `https://news.ycombinator.com/rss`, &got))
+	err = chromedp.Run(ctx, submitFeed(`http://`+l.Addr().String()+`/feeds`, `//input[@name="url"]`, `https://news.ycombinator.com/rss`, &got))
 	if err != nil {
 		t.Fatal(err)
 	}
