@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -110,7 +111,7 @@ func (m *MorningPost) EmptyNews() {
 	m.mu.Unlock()
 }
 
-func (m *MorningPost) ReadURLFromForm(r *http.Request) (string, error) {
+func (m *MorningPost) parseURLFromForm(r *http.Request) (string, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return "", err
@@ -123,9 +124,21 @@ func (m *MorningPost) ReadURLFromForm(r *http.Request) (string, error) {
 	return url, nil
 }
 
-func (m *MorningPost) ReadFeedIDFromURI(uri string) string {
+func (m *MorningPost) parseFeedIDFromURI(uri string) string {
 	urlParts := strings.Split(uri, "/")
 	return urlParts[len(urlParts)-1]
+}
+
+func (m *MorningPost) parsePageFromQueryString(params url.Values) (int, error) {
+	page := 1
+	if params.Get("page") != "" {
+		var err error
+		page, err = strconv.Atoi(params.Get("page"))
+		if err != nil {
+			return 0, err
+		}
+	}
+	return page, nil
 }
 
 func (m *MorningPost) FindFeeds(URL string) []Feed {
@@ -165,7 +178,7 @@ func (m *MorningPost) FindFeeds(URL string) []Feed {
 	}
 }
 
-func (m *MorningPost) HandleHome(w http.ResponseWriter, r *http.Request) {
+func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(m.Stdout, r.Method, r.URL)
 	if r.RequestURI != "/" {
 		fmt.Fprintf(m.Stderr, "%s not found\n", r.RequestURI)
@@ -178,7 +191,7 @@ func (m *MorningPost) HandleHome(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			fmt.Fprintln(m.Stderr, err.Error())
 		}
-		err = RenderHTMLTemplate(w, "templates/home.gohtml", m.PageNews)
+		err = RenderHTMLTemplate(w, "templates/news.gohtml", m.PageNews)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -189,19 +202,14 @@ func (m *MorningPost) HandleHome(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
+func (m *MorningPost) HandleNewsTableRows(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(m.Stdout, r.Method, r.URL)
 	switch r.Method {
 	case http.MethodGet:
-		page := 1
-		params := r.URL.Query()
-		if params.Get("page") != "" {
-			var err error
-			page, err = strconv.Atoi(params.Get("page"))
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+		page, err := m.parsePageFromQueryString(r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 		nextPage := page + 1
 		lastIdx := m.NewsPageSize * page
@@ -220,8 +228,8 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 			nextPage,
 			m.PageNews[m.NewsPageSize*(page-1) : lastIdx],
 		}
-		tpl := template.Must(template.ParseFS(templates, "templates/news.gohtml"))
-		err := tpl.Execute(w, data)
+		tpl := template.Must(template.ParseFS(templates, "templates/v2/partials/news-table-rows.gohtml"))
+		err = tpl.Execute(w, data)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -236,7 +244,7 @@ func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
 func (m *MorningPost) HandleFeedsDelete(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodDelete:
-		id := m.ReadFeedIDFromURI(r.URL.Path)
+		id := m.parseFeedIDFromURI(r.URL.Path)
 		ui64, err := strconv.ParseUint(id, 10, 64)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -258,7 +266,7 @@ func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	case http.MethodPost:
-		URL, err := m.ReadURLFromForm(r)
+		URL, err := m.parseURLFromForm(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -275,7 +283,11 @@ func (m *MorningPost) HandleFeedsTableRows(w http.ResponseWriter, r *http.Reques
 	switch r.Method {
 	case http.MethodGet:
 		tpl := template.Must(template.ParseFS(templates, "templates/v2/partials/feeds-table-rows.gohtml"))
-		err := tpl.Execute(w, m.Store.GetAll())
+		feeds := m.Store.GetAll()
+		sort.Slice(feeds, func(i, j int) bool {
+			return feeds[i].Endpoint < feeds[j].Endpoint
+		})
+		err := tpl.Execute(w, feeds)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -287,11 +299,11 @@ func (m *MorningPost) HandleFeedsTableRows(w http.ResponseWriter, r *http.Reques
 func (m *MorningPost) Serve(l net.Listener) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {})
-	mux.HandleFunc("/news/", m.HandleNews)
+	mux.HandleFunc("/news/table-rows", m.HandleNewsTableRows)
 	mux.HandleFunc("/feeds/table-rows", m.HandleFeedsTableRows)
 	mux.HandleFunc("/feeds/", m.HandleFeedsDelete)
 	mux.HandleFunc("/feeds", m.HandleFeeds)
-	mux.HandleFunc("/", m.HandleHome)
+	mux.HandleFunc("/", m.HandleNews)
 	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", l.Addr().String())
 	srv := &http.Server{
 		Addr:    l.Addr().String(),
@@ -343,12 +355,8 @@ func New(store Store, opts ...Option) (*MorningPost, error) {
 	return m, nil
 }
 
-func RunServer(stdout, stderr io.Writer, args ...string) error {
-	fileStore, err := NewFileStore()
-	if err != nil {
-		return err
-	}
-	m, err := New(fileStore,
+func RunServer(store Store, stdout, stderr io.Writer, args ...string) error {
+	m, err := New(store,
 		WithStdout(stdout),
 		WithStderr(stderr),
 		FromArgs(args),
@@ -366,7 +374,12 @@ func RunServer(stdout, stderr io.Writer, args ...string) error {
 }
 
 func Main() int {
-	if err := RunServer(os.Stdout, os.Stderr, os.Args[1:]...); err != nil {
+	fileStore, err := NewFileStore()
+	if err != nil {
+		fmt.Println(err)
+		return 1
+	}
+	if err := RunServer(fileStore, os.Stdout, os.Stderr, os.Args[1:]...); err != nil {
 		fmt.Println(err)
 		return 1
 	}

@@ -67,16 +67,21 @@ func generateNews(count int) []morningpost.News {
 	return allNews
 }
 
-func removeEmptyLines(data []byte) []byte {
-	var buf bytes.Buffer
-	for _, b := range data {
-		if b != '\n' {
-			buf.WriteByte(b)
-		} else if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] != '\n' {
-			buf.WriteByte(b)
+func normalizeHTMLData(data []byte) []byte {
+	normalizedData := []byte{}
+	lines := bytes.Split(data, []byte("\n"))
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
 		}
+		if line[0] == '\n' {
+			continue
+		}
+		trimmed := bytes.TrimLeft(line, " ")
+		trimmed = append(trimmed, '\n')
+		normalizedData = append(normalizedData, trimmed...)
 	}
-	return buf.Bytes()
+	return normalizedData
 }
 
 func waitServerHealthCheck(t *testing.T, listenAddress string) {
@@ -362,7 +367,7 @@ func TestParseRDFResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	}
 }
 
-func TestHandleFeeds_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
+func TestHandleFeeds_RespondsMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
@@ -382,7 +387,7 @@ func TestHandleFeeds_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testi
 	}
 }
 
-func TestHandleFeeds_AnswersStatusOKGivenRequestWithMethodHead(t *testing.T) {
+func TestHandleFeeds_RespondsStatusOKGivenRequestWithMethodHead(t *testing.T) {
 	t.Parallel()
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
 	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeeds))
@@ -416,7 +421,7 @@ func TestHandleFeeds_ReturnsExpectedStatusCodeGivenRequestWithMethodPostAndBody(
 	}
 }
 
-func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndNoBody(t *testing.T) {
+func TestHandleFeeds_RespondsBadRequestGivenRequestWithMethodPostAndNoBody(t *testing.T) {
 	t.Parallel()
 	want := http.StatusBadRequest
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
@@ -432,7 +437,7 @@ func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndNoBody(t *tes
 	}
 }
 
-func TestHandleFeeds_AnswersBadRequestGivenRequestWithMethodPostAndBlankSpacesInBodyURL(t *testing.T) {
+func TestHandleFeeds_RespondsBadRequestGivenRequestWithMethodPostAndBlankSpacesInBodyURL(t *testing.T) {
 	t.Parallel()
 	want := http.StatusBadRequest
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
@@ -492,6 +497,110 @@ func TestHandleFeedsDelete_DeletesFeedGivenDeleteReqiuestAndPrePopulatedStore(t 
 	}
 }
 
+func TestHandleFeedsDelete_RespondsMethodNotAllowedGivenRequestWithInvalidMethod(t *testing.T) {
+	t.Parallel()
+	want := http.StatusMethodNotAllowed
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeedsDelete))
+	defer ts.Close()
+	req, err := http.NewRequest("bogus", ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want status code %d, got %d", want, got)
+	}
+}
+
+func TestHandleFeedsTableRows_RespondsMethodNotAllowedGivenRequestWithInvalidMethod(t *testing.T) {
+	t.Parallel()
+	want := http.StatusMethodNotAllowed
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeedsTableRows))
+	defer ts.Close()
+	req, err := http.NewRequest("bogus", ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want status code %d, got %d", want, got)
+	}
+}
+
+func TestHandleFeedsTableRows_RendersExpectedHTMLGivenPopulatedStore(t *testing.T) {
+	t.Parallel()
+	golden := []byte(`<tr>
+          <th scope="row">http://fake.url/feed</th>
+          <td>
+            <button
+              class="btn btn-danger"
+              hx-delete="/feeds/1"
+              hx-confirm="Please, confirm you want to delete this feed."
+              hx-target="closest tr"
+              hx-swap="outerHTML swap:1s"
+            >
+              Delete
+            </button>
+          </td>
+        </tr>
+
+        <tr>
+          <th scope="row">http://fake.url/rss</th>
+          <td>
+            <button
+              class="btn btn-danger"
+              hx-delete="/feeds/0"
+              hx-confirm="Please, confirm you want to delete this feed."
+              hx-target="closest tr"
+              hx-swap="outerHTML swap:1s"
+            >
+              Delete
+            </button>
+          </td>
+        </tr>`)
+	want := normalizeHTMLData(golden)
+	fakeStore := fakeStore{
+		0: morningpost.Feed{
+			ID:       0,
+			Endpoint: "http://fake.url/rss",
+		},
+		1: morningpost.Feed{
+			ID:       1,
+			Endpoint: "http://fake.url/feed",
+		},
+	}
+	m, err := morningpost.New(
+		fakeStore,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleFeedsTableRows))
+	defer ts.Close()
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := normalizeHTMLData(body)
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
+
 func TestHandleFeeds_AddsFeedGivenPostRequest(t *testing.T) {
 	t.Parallel()
 	epTs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -520,11 +629,11 @@ func TestHandleFeeds_AddsFeedGivenPostRequest(t *testing.T) {
 	}
 }
 
-func TestHandleHome_AnswersMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
+func TestHandleNews_RespondsMethodNotAllowedGivenRequestWithBogusMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	ts := httptest.NewServer(http.HandlerFunc(m.HandleHome))
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
 	defer ts.Close()
 	req, err := http.NewRequest("bogus", ts.URL, nil)
 	if err != nil {
@@ -792,11 +901,11 @@ func TestParseAtomResponse_ErrorsIfDataIsNotXML(t *testing.T) {
 	}
 }
 
-func TestHandleHome_AnswersNotFoundForUnkownRoute(t *testing.T) {
+func TestHandleNews_RespondsNotFoundForUnkownRoute(t *testing.T) {
 	t.Parallel()
 	want := http.StatusNotFound
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	ts := httptest.NewServer(http.HandlerFunc(m.HandleHome))
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
 	defer ts.Close()
 	resp, err := http.Get(ts.URL + "/bogus")
 	if err != nil {
@@ -1090,12 +1199,12 @@ func TestNewNews_ErrorsGiven(t *testing.T) {
 	}
 }
 
-func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
+func TestHandleNewsTableRows_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 	t.Parallel()
-	want := []byte(`<tr>
+	golden := []byte(`<tr>
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title1.htm" target="_blank">Title 1</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-1" target="_blank">News #1</a>
+    <small class="text-muted">Feed Unit test</small>
   </td>
 </tr>
 <tr
@@ -1104,36 +1213,16 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
   hx-swap="afterend"
 >
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title2.htm" target="_blank">Title 2</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-2" target="_blank">News #2</a>
+    <small class="text-muted">Feed Unit test</small>
   </td>
 </tr>
 `)
+	want := normalizeHTMLData(golden)
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
 	m.NewsPageSize = 2
-	m.PageNews = []morningpost.News{
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 1",
-			URL:   "http://fake.url/title1.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 2",
-			URL:   "http://fake.url/title2.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 3",
-			URL:   "http://fake.url/title3.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 4",
-			URL:   "http://fake.url/title4.htm",
-		},
-	}
-	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
+	m.PageNews = generateNews(4)
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNewsTableRows))
 	defer ts.Close()
 	resp, err := http.Get(ts.URL)
 	if err != nil {
@@ -1143,52 +1232,32 @@ func TestHandleNews_RenderProperHTMLPageGivenGetRequestOnPageOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := removeEmptyLines(body)
+	got := normalizeHTMLData(body)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 }
 
-func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
+func TestHandleNewsTableRows_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	t.Parallel()
-	want := []byte(`<tr>
+	golden := []byte(`<tr>
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title3.htm" target="_blank">Title 3</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-3" target="_blank">News #3</a>
+    <small class="text-muted">Feed Unit test</small>
   </td>
 </tr>
 <tr>
   <td class="table-light" scope="row">
-    <a href="http://fake.url/title4.htm" target="_blank">Title 4</a>
-    <small class="text-muted">Unit Test Feed</small>
+    <a href="http://fake.url/news-4" target="_blank">News #4</a>
+    <small class="text-muted">Feed Unit test</small>
   </td>
 </tr>
 `)
+	want := normalizeHTMLData(golden)
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
 	m.NewsPageSize = 2
-	m.PageNews = []morningpost.News{
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 1",
-			URL:   "http://fake.url/title1.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 2",
-			URL:   "http://fake.url/title2.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 3",
-			URL:   "http://fake.url/title3.htm",
-		},
-		{
-			Feed:  "Unit Test Feed",
-			Title: "Title 4",
-			URL:   "http://fake.url/title4.htm",
-		},
-	}
-	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
+	m.PageNews = generateNews(4)
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNewsTableRows))
 	defer ts.Close()
 	resp, err := http.Get(ts.URL + "?page=2")
 	if err != nil {
@@ -1198,23 +1267,39 @@ func TestHandleNews_RenderProperHTMLPageGivenRequestLastPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := removeEmptyLines(body)
+	got := normalizeHTMLData(body)
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 }
 
-func TestHandleNews_AnswersMethodNotAllowedGivenRequestWithUnexpectedMethod(t *testing.T) {
+func TestHandleNewsTableRows_RespondsMethodNotAllowedGivenRequestWithUnexpectedMethod(t *testing.T) {
 	t.Parallel()
 	want := http.StatusMethodNotAllowed
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
-	ts := httptest.NewServer(http.HandlerFunc(m.HandleNews))
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNewsTableRows))
 	defer ts.Close()
 	req, err := http.NewRequest("bogus", ts.URL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want status code %d, got %d", want, got)
+	}
+}
+
+func TestHandleNewsTableRows_RespondsMethodNotAllowedGivenInvalidPage(t *testing.T) {
+	t.Parallel()
+	want := http.StatusBadRequest
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	ts := httptest.NewServer(http.HandlerFunc(m.HandleNewsTableRows))
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "?page=a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1264,7 +1349,7 @@ func TestServe_RespondsStatusOKOnFeedsGivenEmptyStore(t *testing.T) {
 	}
 }
 
-func TestServe_RespondsStatusOKOnNewsGivenEmptyStore(t *testing.T) {
+func TestServe_RespondsStatusOKOnNewsTableRowsGivenEmptyStore(t *testing.T) {
 	t.Parallel()
 	want := http.StatusOK
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
@@ -1274,7 +1359,7 @@ func TestServe_RespondsStatusOKOnNewsGivenEmptyStore(t *testing.T) {
 	}
 	go m.Serve(l)
 	waitServerHealthCheck(t, l.Addr().String())
-	resp, err := http.Get("http://" + l.Addr().String() + "/news/")
+	resp, err := http.Get("http://" + l.Addr().String() + "/news/table-rows")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1284,7 +1369,7 @@ func TestServe_RespondsStatusOKOnNewsGivenEmptyStore(t *testing.T) {
 	}
 }
 
-func TestServe_ReturnsExpectedBodyOnNewsGivenEmptyStore(t *testing.T) {
+func TestServe_ReturnsExpectedBodyOnNewsTableRowsGivenEmptyStore(t *testing.T) {
 	t.Parallel()
 	want := []byte("\n\n\n")
 	l, err := nettest.NewLocalListener("tcp")
@@ -1294,7 +1379,7 @@ func TestServe_ReturnsExpectedBodyOnNewsGivenEmptyStore(t *testing.T) {
 	m := newMorningPostWithFakeStoreAndNoOutput(t)
 	go m.Serve(l)
 	waitServerHealthCheck(t, l.Addr().String())
-	resp, err := http.Get("http://" + l.Addr().String() + "/news/")
+	resp, err := http.Get("http://" + l.Addr().String() + "/news/table-rows")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1345,5 +1430,20 @@ func TestShutdown_PersistsStoreData(t *testing.T) {
 	got := fileStore2.GetAll()
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
+	}
+}
+
+func TestRunServer_RespondsStatusOKGivenGetOnIndexPage(t *testing.T) {
+	t.Parallel()
+	want := http.StatusOK
+	go morningpost.RunServer(fakeStore{}, io.Discard, io.Discard, []string{"-l", "127.0.0.1:55000"}...)
+	waitServerHealthCheck(t, "127.0.0.1:55000")
+	resp, err := http.Get("http://127.0.0.1:55000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.StatusCode
+	if want != got {
+		t.Fatalf("want response status code %d, got %d", want, got)
 	}
 }
