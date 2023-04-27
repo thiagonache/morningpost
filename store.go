@@ -51,6 +51,12 @@ func (f *FileStore) Load() error {
 }
 
 func (f *FileStore) Save() error {
+	if _, err := os.Stat(path.Dir(f.path)); os.IsNotExist(err) {
+		err := os.MkdirAll(path.Dir(f.path), 0755)
+		if err != nil {
+			return err
+		}
+	}
 	file, err := os.Create(f.path)
 	if err != nil {
 		return err
@@ -79,13 +85,6 @@ func NewFileStore(opts ...FileStoreOption) (*FileStore, error) {
 	err := fileStore.Load()
 	if err != nil {
 		return nil, err
-	}
-	if _, err := os.Stat(path.Dir(fileStore.path)); os.IsNotExist(err) {
-		err := os.MkdirAll(path.Dir(fileStore.path), 0755)
-		if err != nil {
-			return nil, err
-		}
-
 	}
 	return fileStore, nil
 }

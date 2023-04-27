@@ -74,8 +74,15 @@ func normalizeHTMLData(data []byte) []byte {
 		if len(line) == 0 {
 			continue
 		}
-		if line[0] == '\n' {
-			continue
+		if len(line) == 1 {
+			if line[0] == '\n' {
+				continue
+			}
+		}
+		if len(line) == 2 {
+			if line[0] == '\r' && line[1] == '\n' {
+				continue
+			}
 		}
 		trimmed := bytes.TrimLeft(line, " ")
 		trimmed = append(trimmed, '\n')
@@ -553,7 +560,6 @@ func TestHandleFeedsTableRows_RendersExpectedHTMLGivenPopulatedStore(t *testing.
             </button>
           </td>
         </tr>
-
         <tr>
           <th scope="row">http://fake.url/rss</th>
           <td>

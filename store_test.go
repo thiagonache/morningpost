@@ -186,12 +186,16 @@ func TestNewFileStore_LoadsDataGivenPopulatedStore(t *testing.T) {
 	}
 }
 
-func TestNewFileStore_CreatesDirectoryGivenPathNotExist(t *testing.T) {
+func TestSave_CreatesDirectoryGivenPathNotExist(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
-	_, err := morningpost.NewFileStore(
+	fileStore, err := morningpost.NewFileStore(
 		morningpost.WithFileStorePath(tempDir + "/directory/bogus/file.db"),
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = fileStore.Save()
 	if err != nil {
 		t.Fatal(err)
 	}
