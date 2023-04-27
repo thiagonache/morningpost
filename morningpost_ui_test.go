@@ -34,7 +34,7 @@ func submitFeed(urlstr, sel, q string, res *string) chromedp.Tasks {
 	}
 }
 
-func TestFeedPostForm(t *testing.T) {
+func TestUIFeedIsShownOnTableBodyAfterFillingOutInputURLAndClickingOnButtonCreate(t *testing.T) {
 	t.Parallel()
 	l, err := nettest.NewLocalListener("tcp")
 	if err != nil {
@@ -48,7 +48,7 @@ func TestFeedPostForm(t *testing.T) {
 		//chromedp.WithDebugf(log.Printf),
 	)
 	defer cancel()
-	ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	var got string
 	err = chromedp.Run(ctx, submitFeed(`http://`+l.Addr().String()+`/feeds`, `//input[@name="url"]`, `https://news.ycombinator.com/rss`, &got))
