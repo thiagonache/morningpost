@@ -1208,7 +1208,7 @@ func TestHandleNewsTableRows_RenderProperHTMLPageGivenGetRequestOnPageOne(t *tes
   </td>
 </tr>
 <tr
-  hx-get="/news?page=2"
+  hx-get="/news/table-rows?page=2"
   hx-trigger="revealed"
   hx-swap="afterend"
 >
