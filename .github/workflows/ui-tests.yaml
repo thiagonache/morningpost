@@ -1,0 +1,34 @@
+name: UI tests
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+
+jobs:
+  ui-tests:
+    runs-on:
+      - "ubuntu-latest"
+    name: Testing UI
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-mod-version: "go.mod"
+      - name: Install UI tests dependencies
+        run: |
+          sudo apt-get update
+          sudo apt install -y libasound2 libnspr4 libnss3 libxss1 xdg-utils unzip libappindicator1 fonts-liberation libgbm1 libu2f-udev libvulkan1
+          sudo apt -f install
+          sudo rm google-chrome*.deb chromedriver*.zip || true
+          sudo wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i google-chrome*.deb
+          CHROME_VERSION=$(curl https://chromedriver.storage.googleapis.com/LATEST_RELEASE)
+          sudo wget https://chromedriver.storage.googleapis.com/$CHROME_VERSION/chromedriver_linux64.zip
+          sudo unzip chromedriver_linux64.zip
+          sudo mv chromedriver /usr/bin/chromedriver
+          sudo chmod +x /usr/bin/chromedriver
+      - name: UI tests
+        run: go test -tags ui ./...
