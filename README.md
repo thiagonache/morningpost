@@ -4,6 +4,20 @@ It's nice to have something interesting to read with your morning coffee. My tas
 
 ![Demo Video](https://thiagocarvalho-public-assets.s3.us-west-2.amazonaws.com/morningpost-videos/demo.gif)
 
+## Getting started
+
+### Running program
+
+_If_ you have `Go` installed and configured on your machine, you can `run` it:
+
+```bash
+$ go run github.com/thiagonache/morningpost/cmd/morningpost@latest
+go: downloading github.com/thiagonache/morningpost v0.0.9-alpha
+Listening at http://127.0.0.1:33000
+```
+
+Alternatively, you can `download` the compiled binary from the [releases](https://github.com/thiagonache/morningpost/releases) page.
+
 ## Skills demonstrated
 
 ### Go Backend developer
@@ -37,28 +51,6 @@ It's nice to have something interesting to read with your morning coffee. My tas
 - [ ] Build container image
 - [x] Code dependencies vulnerability check
 - [ ] Deploy solution on two cloud providers
-
-## Getting started
-
-### Install binary
-
-You can `install` via Go command:
-
-```bash
-$ go install github.com/thiagonache/morningpost/cmd/morningpost@latest
-$
-```
-
-Alternatively, you can `download` the compiled binary from the [releases](https://github.com/thiagonache/morningpost/releases) page.
-
-### Run
-
-Run program and open your browser at <http://localhost:33000/>
-
-```bash
-$ morningpost
-2023/04/03 10:22:11 Listening at http://0.0.0.0:33000
-```
 
 ## Documentation
 
