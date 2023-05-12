@@ -1,144 +1,36 @@
 package morningpost
 
 import (
-	"context"
-	"embed"
 	"encoding/xml"
-	"errors"
-	"flag"
 	"fmt"
 	"html/template"
 	"io"
-	"math/rand"
-	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html/charset"
-	"golang.org/x/sync/errgroup"
 )
-
-//go:embed templates/*.gohtml templates/v2/*.gohtml templates/v2/partials/*.gohtml
-var templates embed.FS
 
 const (
-	DefaultHTTPTimeout   = 30 * time.Second
-	DefaultListenAddress = "127.0.0.1:33000"
-	DefaultNewsPageSize  = 10
-	FeedTypeAtom         = "Atom"
-	FeedTypeRDF          = "RDF"
-	FeedTypeRSS          = "RSS"
+	DefaultHTTPTimeout = 30 * time.Second
+	FeedTypeAtom       = "Atom"
+	FeedTypeRDF        = "RDF"
+	FeedTypeRSS        = "RSS"
 )
 
-type News struct {
-	Feed  string
-	Title string
-	URL   string
-}
-
-func NewNews(feed, title, URL string) (News, error) {
-	if feed == "" || title == "" || URL == "" {
-		return News{}, errors.New("empty feed, title or url")
-	}
-	return News{
-		Feed:  feed,
-		Title: title,
-		URL:   URL,
-	}, nil
+type Feed struct {
+	Type string
+	URL  string
 }
 
 type MorningPost struct {
-	Client        *http.Client
-	ctx           context.Context
-	ListenAddress string
-	NewsPageSize  int
-	PageNews      []News
-	Stderr        io.Writer
-	Stdout        io.Writer
-	stop          context.CancelFunc
-	Store         Store
-
-	mu   *sync.Mutex
-	News []News
-}
-
-func (m *MorningPost) GetNews() error {
-	m.EmptyNews()
-	defer m.RandomNews()
-	g := new(errgroup.Group)
-	for _, feed := range m.Store.GetAll() {
-		feed := feed
-		g.Go(func() error {
-			news, err := feed.GetNews()
-			if err != nil {
-				return fmt.Errorf("%q: %w", feed.Endpoint, err)
-			}
-			m.AddNews(news)
-			return nil
-		})
-	}
-	return g.Wait()
-}
-
-func (m *MorningPost) RandomNews() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.PageNews = make([]News, 0, m.NewsPageSize)
-	randomIndexes := rand.Perm(len(m.News))
-	for _, idx := range randomIndexes {
-		m.PageNews = append(m.PageNews, m.News[idx])
-	}
-}
-
-func (m *MorningPost) AddNews(news []News) {
-	m.mu.Lock()
-	m.News = append(m.News, news...)
-	m.mu.Unlock()
-}
-
-func (m *MorningPost) EmptyNews() {
-	m.mu.Lock()
-	m.News = []News{}
-	m.mu.Unlock()
-}
-
-func (m *MorningPost) parseURLFromForm(r *http.Request) (string, error) {
-	err := r.ParseForm()
-	if err != nil {
-		return "", err
-	}
-	url := r.Form.Get("url")
-	url = strings.TrimSpace(url)
-	if url == "" {
-		return "", errors.New("bad Request: please, inform the URL")
-	}
-	return url, nil
-}
-
-func (m *MorningPost) parseFeedIDFromURI(uri string) string {
-	urlParts := strings.Split(uri, "/")
-	return urlParts[len(urlParts)-1]
-}
-
-func (m *MorningPost) parsePageFromQueryString(params url.Values) (int, error) {
-	page := 1
-	if params.Get("page") != "" {
-		var err error
-		page, err = strconv.Atoi(params.Get("page"))
-		if err != nil {
-			return 0, err
-		}
-	}
-	return page, nil
+	Client   *http.Client
+	Handlers map[string]func(http.ResponseWriter, *http.Request)
+	store    Store
 }
 
 func (m *MorningPost) FindFeeds(URL string) []Feed {
@@ -164,8 +56,8 @@ func (m *MorningPost) FindFeeds(URL string) []Feed {
 			return nil
 		}
 		return []Feed{{
-			Endpoint: URL,
-			Type:     feedType,
+			URL:  URL,
+			Type: feedType,
 		}}
 	case "text/html":
 		feeds, err := ParseLinkTags(resp.Body, URL)
@@ -178,398 +70,124 @@ func (m *MorningPost) FindFeeds(URL string) []Feed {
 	}
 }
 
-func (m *MorningPost) HandleNews(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(m.Stdout, r.Method, r.URL)
-	if r.RequestURI != "/" {
-		fmt.Fprintf(m.Stderr, "%s not found\n", r.RequestURI)
-		http.NotFound(w, r)
+func (m *MorningPost) HandleRouteVisit(w http.ResponseWriter, r *http.Request) {
+	uriParts := strings.Split(r.RequestURI, "/")
+	URL, err := url.PathUnescape(uriParts[len(uriParts)-1])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	switch r.Method {
-	case http.MethodGet:
-		err := m.GetNews()
-		if err != nil {
-			fmt.Fprintln(m.Stderr, err.Error())
-		}
-		err = RenderHTMLTemplate(w, "templates/news.gohtml", m.PageNews)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	default:
-		fmt.Fprintln(m.Stderr, "Method not allowed")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (m *MorningPost) HandleNewsTableRows(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(m.Stdout, r.Method, r.URL)
-	switch r.Method {
-	case http.MethodGet:
-		page, err := m.parsePageFromQueryString(r.URL.Query())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		nextPage := page + 1
-		lastIdx := m.NewsPageSize * page
-		if lastIdx > len(m.PageNews) {
-			lastIdx = len(m.PageNews)
-		}
-		if lastIdx >= len(m.PageNews) {
-			nextPage = 0
-		}
-		data := struct {
-			LastPageIdx int
-			NextPage    int
-			PageNews    []News
-		}{
-			m.NewsPageSize - 1,
-			nextPage,
-			m.PageNews[m.NewsPageSize*(page-1) : lastIdx],
-		}
-		tpl := template.Must(template.ParseFS(templates, "templates/v2/partials/news-table-rows.gohtml"))
-		err = tpl.Execute(w, data)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	default:
-		fmt.Fprintln(m.Stderr, "Method not allowed")
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-}
-
-func (m *MorningPost) HandleFeedsDelete(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodDelete:
-		id := m.parseFeedIDFromURI(r.URL.Path)
-		ui64, err := strconv.ParseUint(id, 10, 64)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		m.Store.Delete(ui64)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (m *MorningPost) HandleFeeds(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodHead:
 	case http.MethodGet:
-		tpl := template.Must(template.ParseFS(templates, "templates/v2/feeds.gohtml"))
-		err := tpl.Execute(w, m.Store.GetAll())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	case http.MethodPost:
-		URL, err := m.parseURLFromForm(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if !m.store.URLVisited(URL) {
+			http.NotFound(w, r)
 			return
 		}
-		feeds := m.FindFeeds(URL)
-		m.Store.Add(feeds...)
-		w.Header().Set("HX-Trigger", "newFeed")
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodPost:
+		m.store.RecordVisit(URL)
+		w.WriteHeader(http.StatusNoContent)
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (m *MorningPost) HandleFeedsTableRows(w http.ResponseWriter, r *http.Request) {
+func (m *MorningPost) HandleRouteFeedCRUD(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodHead:
+	case http.MethodGet:
+		uriParts := strings.Split(r.RequestURI, "/")
+		URL, err := url.PathUnescape(uriParts[len(uriParts)-1])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !m.store.FeedExists(URL) {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		uriParts := strings.Split(r.RequestURI, "/")
+		URL, err := url.PathUnescape(uriParts[len(uriParts)-1])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		m.store.DeleteFeed(URL)
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodPost:
+		uriParts := strings.Split(r.RequestURI, "/")
+		URL, err := url.PathUnescape(uriParts[len(uriParts)-1])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		feeds := m.FindFeeds(URL)
+		for _, feed := range feeds {
+			m.store.AddFeed(feed)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (m *MorningPost) HandleRouteFeed(w http.ResponseWriter, r *http.Request) {
+	switch r.RequestURI {
+	case "/feed/table/rows":
+		m.HandleRouteFeedTableRows(w, r)
+	default:
+		m.HandleRouteFeedCRUD(w, r)
+	}
+}
+
+func (m *MorningPost) HandleRouteFeedTableRows(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		tpl := template.Must(template.ParseFS(templates, "templates/v2/partials/feeds-table-rows.gohtml"))
-		feeds := m.Store.GetAll()
+		tpl := template.Must(template.New("feeds-table-rows.gohtml").Funcs(template.FuncMap{
+			"PathEscape": url.PathEscape,
+		}).ParseFiles("templates/feeds-table-rows.gohtml"))
+		feeds := m.store.GetFeeds()
 		sort.Slice(feeds, func(i, j int) bool {
-			return feeds[i].Endpoint < feeds[j].Endpoint
+			return feeds[i].URL < feeds[j].URL
 		})
 		err := tpl.Execute(w, feeds)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (m *MorningPost) Serve(l net.Listener) error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {})
-	mux.HandleFunc("/news/table-rows", m.HandleNewsTableRows)
-	mux.HandleFunc("/feeds/table-rows", m.HandleFeedsTableRows)
-	mux.HandleFunc("/feeds/", m.HandleFeedsDelete)
-	mux.HandleFunc("/feeds", m.HandleFeeds)
-	mux.HandleFunc("/", m.HandleNews)
-	fmt.Fprintf(m.Stdout, "Listening at http://%s\n", l.Addr().String())
-	srv := &http.Server{
-		Addr:    l.Addr().String(),
-		Handler: mux,
+func (m *MorningPost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for pattern, handler := range m.Handlers {
+		if strings.HasPrefix(r.RequestURI, pattern) {
+			handler(w, r)
+			return
+		}
 	}
-	return srv.Serve(l)
+	http.NotFound(w, r)
 }
 
-func (m *MorningPost) ListenAndServe() error {
-	l, err := net.Listen("tcp", m.ListenAddress)
-	if err != nil {
-		return err
-	}
-	return m.Serve(l)
-}
-
-func (m *MorningPost) Shutdown() error {
-	return m.Store.Save()
-}
-
-func (m *MorningPost) WaitForExit() error {
-	<-m.ctx.Done()
-	fmt.Fprintln(m.Stdout, "Please WAIT! Do not repeat this action")
-	return m.Shutdown()
-}
-
-func New(store Store, opts ...Option) (*MorningPost, error) {
-	rand.Seed(time.Now().UTC().UnixNano())
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+func New(store Store) *MorningPost {
 	m := &MorningPost{
 		Client: &http.Client{
 			Timeout: DefaultHTTPTimeout,
 		},
-		ctx:           ctx,
-		ListenAddress: DefaultListenAddress,
-		mu:            &sync.Mutex{},
-		NewsPageSize:  DefaultNewsPageSize,
-		Stderr:        os.Stderr,
-		Stdout:        os.Stdout,
-		Store:         store,
-		stop:          stop,
+		store: store,
 	}
-	for _, o := range opts {
-		err := o(m)
-		if err != nil {
-			return nil, err
-		}
+	m.Handlers = map[string]func(http.ResponseWriter, *http.Request){
+		"/visit/": m.HandleRouteVisit,
+		"/feed/":  m.HandleRouteFeed,
 	}
-	return m, nil
-}
-
-func RunServer(store Store, stdout, stderr io.Writer, args ...string) error {
-	m, err := New(store,
-		WithStdout(stdout),
-		WithStderr(stderr),
-		FromArgs(args),
-	)
-	if err != nil {
-		return err
-	}
-	go m.ListenAndServe()
-	err = m.WaitForExit()
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(m.Stdout, "Done. Thank you! <3")
-	return nil
-}
-
-func Main() int {
-	fileStore, err := NewFileStore()
-	if err != nil {
-		fmt.Println(err)
-		return 1
-	}
-	if err := RunServer(fileStore, os.Stdout, os.Stderr, os.Args[1:]...); err != nil {
-		fmt.Println(err)
-		return 1
-	}
-	return 0
-}
-
-type Feed struct {
-	Endpoint string
-	ID       uint64
-	Type     string
-}
-
-func (f Feed) GetNews() ([]News, error) {
-	req, err := http.NewRequest(http.MethodGet, f.Endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("user-agent", "MorningPost/0.1")
-	req.Header.Set("accept", "*/*")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	switch f.Type {
-	case FeedTypeRSS:
-		return ParseRSSResponse(resp.Body)
-	case FeedTypeRDF:
-		return ParseRDFResponse(resp.Body)
-	case FeedTypeAtom:
-		return ParseAtomResponse(resp.Body)
-	default:
-		return nil, fmt.Errorf("unkown feed type %q", f.Type)
-	}
+	return m
 }
 
 func parseContentType(headers http.Header) string {
 	return strings.Split(headers.Get("content-type"), ";")[0]
-}
-
-func ParseLinkTags(r io.Reader, baseURL string) ([]Feed, error) {
-	base, err := url.Parse(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := goquery.NewDocumentFromReader(r)
-	if err != nil {
-		return nil, err
-	}
-	feeds := []Feed{}
-	doc.Find("link[type='application/rss+xml']").Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
-		if exists {
-			u, err := url.Parse(href)
-			if err != nil {
-				return
-			}
-			feeds = append(feeds, Feed{
-				Endpoint: base.ResolveReference(u).String(),
-				Type:     FeedTypeRSS,
-			})
-		}
-	})
-	doc.Find("link[type='application/atom+xml']").Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
-		if exists {
-			u, err := url.Parse(href)
-			if err != nil {
-				return
-			}
-			feeds = append(feeds, Feed{
-				Endpoint: base.ResolveReference(u).String(),
-				Type:     FeedTypeAtom,
-			})
-		}
-	})
-	doc.Find("a").Each(func(i int, s *goquery.Selection) {
-		title, _ := s.Attr("title")
-		if strings.Contains(strings.ToLower(title), "rss") {
-			href, exists := s.Attr("href")
-			if exists {
-				u, err := url.Parse(href)
-				if err != nil {
-					return
-				}
-				feeds = append(feeds, Feed{
-					Endpoint: base.ResolveReference(u).String(),
-					Type:     FeedTypeRSS,
-				})
-			}
-		}
-	})
-	return feeds, nil
-}
-
-func RenderHTMLTemplate(w io.Writer, templatePath string, data any) error {
-	tpl := template.Must(template.New("main").ParseFS(templates, "templates/base.gohtml", templatePath))
-	err := tpl.Execute(w, data)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func ParseRSSResponse(r io.Reader) ([]News, error) {
-	type rss struct {
-		XMLName xml.Name `xml:"rss"`
-		Channel struct {
-			Title string `xml:"title"`
-			Items []struct {
-				Title string `xml:"title"`
-				Link  string `xml:"link"`
-			} `xml:"item"`
-		} `xml:"channel"`
-	}
-	rssData := rss{}
-	decoder := xml.NewDecoder(r)
-	decoder.CharsetReader = charset.NewReaderLabel
-	err := decoder.Decode(&rssData)
-	if err != nil {
-		return nil, fmt.Errorf("cannot decode data: %w", err)
-	}
-	allNews := make([]News, 0, len(rssData.Channel.Items))
-	for _, item := range rssData.Channel.Items {
-		news, err := NewNews(rssData.Channel.Title, item.Title, item.Link)
-		if err != nil {
-			continue
-		}
-		allNews = append(allNews, news)
-	}
-	return allNews, nil
-}
-
-func ParseRDFResponse(r io.Reader) ([]News, error) {
-	type rdf struct {
-		XMLName xml.Name `xml:"RDF"`
-		Channel struct {
-			Title string `xml:"title"`
-		} `xml:"channel"`
-		Items []struct {
-			Title string `xml:"title"`
-			Link  string `xml:"link"`
-		} `xml:"item"`
-	}
-	rdfData := rdf{}
-	decoder := xml.NewDecoder(r)
-	decoder.CharsetReader = charset.NewReaderLabel
-	err := decoder.Decode(&rdfData)
-	if err != nil {
-		return nil, fmt.Errorf("cannot decode data: %w", err)
-	}
-	allNews := make([]News, 0, len(rdfData.Items))
-	for _, item := range rdfData.Items {
-		news, err := NewNews(rdfData.Channel.Title, item.Title, item.Link)
-		if err != nil {
-			continue
-		}
-		allNews = append(allNews, news)
-	}
-	return allNews, nil
-}
-
-func ParseAtomResponse(r io.Reader) ([]News, error) {
-	type atom struct {
-		XMLName xml.Name `xml:"feed"`
-		Title   string   `xml:"title"`
-		Entries []struct {
-			Link struct {
-				Href string `xml:"href,attr"`
-			} `xml:"link"`
-			Title struct {
-				Text string `xml:",chardata"`
-			} `xml:"title"`
-		} `xml:"entry"`
-	}
-	atomData := atom{}
-	decoder := xml.NewDecoder(r)
-	decoder.CharsetReader = charset.NewReaderLabel
-	err := decoder.Decode(&atomData)
-	if err != nil {
-		return nil, fmt.Errorf("cannot decode data: %w", err)
-	}
-	allNews := make([]News, 0, len(atomData.Entries))
-	for _, item := range atomData.Entries {
-		news, err := NewNews(atomData.Title, item.Title.Text, item.Link.Href)
-		if err != nil {
-			continue
-		}
-		allNews = append(allNews, news)
-	}
-	return allNews, nil
 }
 
 func ParseFeedType(r io.Reader) (string, error) {
@@ -595,48 +213,57 @@ func ParseFeedType(r io.Reader) (string, error) {
 	}
 }
 
-type Option func(*MorningPost) error
-
-func FromArgs(args []string) Option {
-	return func(m *MorningPost) error {
-		fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-		fs.SetOutput(m.Stderr)
-		listenAddress := fs.String("l", DefaultListenAddress, "Listening address")
-		err := fs.Parse(args)
-		if err != nil {
-			return err
-		}
-		m.ListenAddress = *listenAddress
-		return nil
+func ParseLinkTags(r io.Reader, baseURL string) ([]Feed, error) {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, err
 	}
-}
-
-func WithStderr(w io.Writer) Option {
-	return func(m *MorningPost) error {
-		if w == nil {
-			return errors.New("standard error cannot be nil")
-		}
-		m.Stderr = w
-		return nil
+	doc, err := goquery.NewDocumentFromReader(r)
+	if err != nil {
+		return nil, err
 	}
-}
-
-func WithStdout(w io.Writer) Option {
-	return func(m *MorningPost) error {
-		if w == nil {
-			return errors.New("standard stdout cannot be nil")
+	feeds := []Feed{}
+	doc.Find("link[type='application/rss+xml']").Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr("href")
+		if exists {
+			u, err := url.Parse(href)
+			if err != nil {
+				return
+			}
+			feeds = append(feeds, Feed{
+				URL:  base.ResolveReference(u).String(),
+				Type: FeedTypeRSS,
+			})
 		}
-		m.Stdout = w
-		return nil
-	}
-}
-
-func WithClient(c *http.Client) Option {
-	return func(m *MorningPost) error {
-		if c == nil {
-			return errors.New("HTTP client cannot be nil")
+	})
+	doc.Find("link[type='application/atom+xml']").Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr("href")
+		if exists {
+			u, err := url.Parse(href)
+			if err != nil {
+				return
+			}
+			feeds = append(feeds, Feed{
+				URL:  base.ResolveReference(u).String(),
+				Type: FeedTypeAtom,
+			})
 		}
-		m.Client = c
-		return nil
-	}
+	})
+	doc.Find("a").Each(func(i int, s *goquery.Selection) {
+		title, _ := s.Attr("title")
+		if strings.Contains(strings.ToLower(title), "rss") {
+			href, exists := s.Attr("href")
+			if exists {
+				u, err := url.Parse(href)
+				if err != nil {
+					return
+				}
+				feeds = append(feeds, Feed{
+					URL:  base.ResolveReference(u).String(),
+					Type: FeedTypeRSS,
+				})
+			}
+		}
+	})
+	return feeds, nil
 }

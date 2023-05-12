@@ -1,11 +1,14 @@
 package main
 
 import (
-	"os"
+	"log"
+	"net/http"
 
 	"github.com/thiagonache/morningpost"
 )
 
 func main() {
-	os.Exit(morningpost.Main())
+	server := morningpost.New(&morningpost.MemoryStore{})
+	log.Println("Listening http://127.0.0.1:5000")
+	log.Fatal(http.ListenAndServe("127.0.0.1:5000", server))
 }
