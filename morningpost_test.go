@@ -1036,6 +1036,22 @@ func TestFindFeeds_ReturnsExpectedFeedsGivenApplicationRSSXMLContentType(t *test
 	}
 }
 
+func TestFindFeeds_ReturnsExpectedFeedGivenURLWithoutScheme(t *testing.T) {
+	t.Parallel()
+	want := []morningpost.Feed{
+		{
+			Endpoint: "https://domainwheel.com/feed/",
+			Type:     morningpost.FeedTypeRSS,
+		},
+	}
+	m := newMorningPostWithFakeStoreAndNoOutput(t)
+	// if this test fails check if the URL is still a valid feed
+	got := m.FindFeeds("domainwheel.com/feed/")
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
+
 func TestFindFeeds_ReturnsExpectedFeedsGivenApplicationXMLContentTypeAndRSSData(t *testing.T) {
 	t.Parallel()
 	ts := newServerWithContentTypeAndBodyResponse(t, "application/xml", "testdata/rss.xml")

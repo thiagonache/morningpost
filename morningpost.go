@@ -142,6 +142,9 @@ func (m *MorningPost) parsePageFromQueryString(params url.Values) (int, error) {
 }
 
 func (m *MorningPost) FindFeeds(URL string) []Feed {
+	if !strings.HasPrefix(URL, "http") {
+		URL = "https://" + URL
+	}
 	req, err := http.NewRequest(http.MethodGet, URL, nil)
 	if err != nil {
 		return nil
