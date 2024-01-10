@@ -7,7 +7,7 @@ require (
 	github.com/chromedp/chromedp v0.9.1
 	github.com/google/go-cmp v0.5.9
 	golang.org/x/exp v0.0.0-20230626212559-97b1e661b5df
-	golang.org/x/net v0.11.0
+	golang.org/x/net v0.17.0
 	golang.org/x/sync v0.3.0
 )
 
@@ -20,6 +20,6 @@ require (
 	github.com/gobwas/ws v1.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	golang.org/x/sys v0.9.0 // indirect
-	golang.org/x/text v0.10.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 )
